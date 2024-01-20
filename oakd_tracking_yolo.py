@@ -73,7 +73,7 @@ class OakdTrackingYolo(object):
         fov: float,
         cam_debug: bool = False,
         robot_coordinate: bool = False,
-        track_targets: Optional[List[int]] = None,
+        track_targets: Optional[List[Union[int, str]]] = None,
     ) -> None:
         if not Path(config_path).exists():
             raise ValueError("Path {} does not poetry exist!".format(config_path))
@@ -100,8 +100,6 @@ class OakdTrackingYolo(object):
         self.anchorMasks = metadata.get("anchor_masks", {})
         self.iouThreshold = metadata.get("iou_threshold", {})
         self.confidenceThreshold = metadata.get("confidence_threshold", {})
-
-        print(metadata)
         # parse labels
         nnMappings = config.get("mappings", {})
         self.labels = nnMappings.get("labels", {})
@@ -154,6 +152,9 @@ class OakdTrackingYolo(object):
         self.track = None
         self.bird_eye_frame = self.create_bird_frame()
         self.raw_frame = None
+
+    def close(self) -> None:
+        self._device.close()
 
     def convert_to_pos_from_akari(self, pos: Any, pitch: float, yaw: float) -> Any:
         pitch = -1 * pitch
@@ -250,17 +251,25 @@ class OakdTrackingYolo(object):
         spatialDetectionNetwork.setAnchors(self.anchors)
         spatialDetectionNetwork.setAnchorMasks(self.anchorMasks)
         spatialDetectionNetwork.setIouThreshold(self.iouThreshold)
-        # トラッキングする物体のIDを配列で渡す。
+
+        # トラッキングする物体のID、もしくは物体名を配列で渡す。
         # 指定がない場合はconfigファイル内の全物体をトラッキング対象に指定
         if self.track_targets is None:
             objectTracker.setDetectionLabelsToTrack(list(range(self.classes)))
         else:
-            objectTracker.setDetectionLabelsToTrack(self.track_targets)
+            target_list = []
+            for target in self.track_targets:
+                if isinstance(target, int):
+                    target_list.append(target)
+                elif isinstance(target, str):
+                    if target in self.labels:
+                        target_list.append(self.labels.index(target))
+            objectTracker.setDetectionLabelsToTrack(target_list)
         # possible tracking types: ZERO_TERM_COLOR_HISTOGRAM, ZERO_TERM_IMAGELESS, SHORT_TERM_IMAGELESS, SHORT_TERM_KCF
         objectTracker.setTrackerType(dai.TrackerType.ZERO_TERM_COLOR_HISTOGRAM)
         # take the smallest ID when new object is tracked, possible options: SMALLEST_ID, UNIQUE_ID
         objectTracker.setTrackerIdAssignmentPolicy(
-            dai.TrackerIdAssignmentPolicy.SMALLEST_ID
+            dai.TrackerIdAssignmentPolicy.UNIQUE_ID
         )
 
         manip.out.link(spatialDetectionNetwork.input)
@@ -292,24 +301,49 @@ class OakdTrackingYolo(object):
     def get_frame(self) -> Union[np.ndarray, List[Any], Any]:
         frame = None
         detections = []
-        if self.qRgb.has():
-            rgb_mes = self.qRgb.get()
-            self.sync.add_msg("rgb", rgb_mes)
-            if self.robot_coordinate:
-                self.sync.add_msg(
-                    "head_pos",
-                    self.joints.get_joint_positions(),
-                    str(rgb_mes.getSequenceNum()),
-                )
-        if self.qDepth.has():
-            self.sync.add_msg("depth", self.qDepth.get())
-        if self.qRaw.has():
-            self.sync.add_msg("raw", self.qRaw.get())
-        if self.qDet.has():
-            self.sync.add_msg("detections", self.qDet.get())
-            self.counter += 1
-        if self.qTrack.has():
-            self.track = self.qTrack.get()
+        ret = False
+        try:
+            ret = self.qRgb.has()
+            if ret:
+                rgb_mes = self.qRgb.get()
+                self.sync.add_msg("rgb", rgb_mes)
+                if self.robot_coordinate:
+                    self.sync.add_msg(
+                        "head_pos",
+                        self.joints.get_joint_positions(),
+                        str(rgb_mes.getSequenceNum()),
+                    )
+        except BaseException:
+            raise
+        ret = False
+        try:
+            ret = self.qDepth.has()
+            if ret:
+                self.sync.add_msg("depth", self.qDepth.get())
+        except BaseException:
+            raise
+        ret = False
+        try:
+            ret = self.qRaw.has()
+            if ret:
+                self.sync.add_msg("raw", self.qRaw.get())
+        except BaseException:
+            raise
+        ret = False
+        try:
+            ret = self.qDet.has()
+            if ret:
+                self.sync.add_msg("detections", self.qDet.get())
+                self.counter += 1
+        except BaseException:
+            raise
+        ret = False
+        try:
+            ret = self.qTrack.has()
+            if ret:
+                self.track = self.qTrack.get()
+        except BaseException:
+            raise
         msgs = self.sync.get_msgs()
         tracklets = None
         if msgs is not None:
