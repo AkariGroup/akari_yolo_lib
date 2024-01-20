@@ -4,7 +4,7 @@ import contextlib
 import json
 import time
 from pathlib import Path
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import blobconverter
 import cv2
@@ -66,7 +66,7 @@ class OakdYolo(object):
         # Output queues will be used to get the rgb frames and nn data from the outputs defined above
         self.qControl = self._device.getInputQueue("control")
         self.qRgb = self._device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
-        self.qIsp = self._device.getOutputQueue(name="isp")
+        self.qRaw = self._device.getOutputQueue(name="raw")
         self.qDet = self._device.getOutputQueue(name="nn", maxSize=4, blocking=False)
         self.counter = 0
         self.startTime = time.monotonic()
@@ -75,6 +75,7 @@ class OakdYolo(object):
         self.path = ""
         self.num = 0
         self.counter = 0
+        self.raw_frame = None
 
     def close(self) -> None:
         self._device.close()
@@ -97,10 +98,10 @@ class OakdYolo(object):
         camRgb = pipeline.create(dai.node.ColorCamera)
         detectionNetwork = pipeline.create(dai.node.YoloDetectionNetwork)
         xoutRgb = pipeline.create(dai.node.XLinkOut)
-        nnOut = pipeline.create(dai.node.XLinkOut)
+        xoutNn = pipeline.create(dai.node.XLinkOut)
         controlIn.setStreamName("control")
         xoutRgb.setStreamName("rgb")
-        nnOut.setStreamName("nn")
+        xoutNn.setStreamName("nn")
 
         # Properties
         controlIn.out.link(camRgb.inputControl)
@@ -111,9 +112,9 @@ class OakdYolo(object):
         camRgb.setPreviewSize(1920, 1080)
         camRgb.setFps(self.cam_fps)
 
-        xoutIsp = pipeline.create(dai.node.XLinkOut)
-        xoutIsp.setStreamName("isp")
-        camRgb.isp.link(xoutIsp.input)
+        xoutRaw = pipeline.create(dai.node.XLinkOut)
+        xoutRaw.setStreamName("raw")
+        camRgb.video.link(xoutRaw.input)
 
         manip = pipeline.create(dai.node.ImageManip)
         manip.setMaxOutputFrameSize(self.width * self.height * 3)  # 640x640x3
@@ -134,7 +135,7 @@ class OakdYolo(object):
         # Linking
         manip.out.link(detectionNetwork.input)
         detectionNetwork.passthrough.link(xoutRgb.input)
-        detectionNetwork.out.link(nnOut.input)
+        detectionNetwork.out.link(xoutNn.input)
         return pipeline
 
     def frame_norm(self, frame: np.ndarray, bbox: Tuple[float]) -> List[int]:
@@ -145,12 +146,14 @@ class OakdYolo(object):
     def get_frame(self) -> Union[np.ndarray, List[Any]]:
         try:
             inRgb = self.qRgb.get()
-            inIsp = self.qIsp.get()
+            inRaw = self.qRaw.get()
             inDet = self.qDet.get()
         except BaseException:
             raise
-        if inIsp is not None:
+        if inRgb is not None:
             frame = inRgb.getCvFrame()
+        if inRaw is not None:
+            self.raw_frame = inRaw.getCvFrame()
         if inDet is not None:
             detections = inDet.detections
             self.counter += 1
@@ -170,25 +173,32 @@ class OakdYolo(object):
                 )
         return frame, detections
 
-    def display_frame(
-        self, name: str, frame: np.ndarray, detections: List[Any]
-    ) -> None:
-        if frame is not None:
-            frame = cv2.resize(
+    def get_raw_frame(self) -> np.ndarray:
+        return self.raw_frame
+
+    def get_labeled_frame(
+        self,
+        frame: np.ndarray,
+        detections: List[Any],
+        id: Optional[int] = None,
+        disp_info: bool = False,
+    ) -> np.ndarray:
+        for detection in detections:
+            if id is not None and detections.id != id:
+                continue
+            bbox = self.frame_norm(
                 frame,
-                (
-                    int(frame.shape[1] * DISPLAY_WINDOW_SIZE_RATE),
-                    int(frame.shape[0] * DISPLAY_WINDOW_SIZE_RATE),
-                ),
+                (detection.xmin, detection.ymin, detection.xmax, detection.ymax),
             )
-            for detection in detections:
-                bbox = self.frame_norm(
-                    frame,
-                    (detection.xmin, detection.ymin, detection.xmax, detection.ymax),
-                )
+            try:
+                label = self.labels[detection.label]
+            except BaseException:
+                label = detection.label
+            cv2.rectangle(frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (255, 0, 0), 2)
+            if disp_info:
                 cv2.putText(
                     frame,
-                    self.labels[detection.label],
+                    label,
                     (bbox[0] + 10, bbox[1] + 20),
                     cv2.FONT_HERSHEY_TRIPLEX,
                     0.5,
@@ -202,8 +212,22 @@ class OakdYolo(object):
                     0.5,
                     255,
                 )
-                cv2.rectangle(
-                    frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (255, 0, 0), 2
+        return frame
+
+    def display_frame(
+        self, name: str, frame: np.ndarray, detections: List[Any]
+    ) -> None:
+        if frame is not None:
+            frame = cv2.resize(
+                frame,
+                (
+                    int(frame.shape[1] * DISPLAY_WINDOW_SIZE_RATE),
+                    int(frame.shape[0] * DISPLAY_WINDOW_SIZE_RATE),
+                ),
+            )
+            if detections is not None:
+                frame = self.get_labeled_frame(
+                    frame=frame, detections=detections, disp_info=True
                 )
             cv2.putText(
                 frame,

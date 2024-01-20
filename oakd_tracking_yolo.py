@@ -276,9 +276,9 @@ class OakdTrackingYolo(object):
         spatialDetectionNetwork.passthrough.link(xoutRgb.input)
         stereo.depth.link(spatialDetectionNetwork.inputDepth)
 
-        xoutNN = pipeline.create(dai.node.XLinkOut)
-        xoutNN.setStreamName("nn")
-        spatialDetectionNetwork.out.link(xoutNN.input)
+        xoutNn = pipeline.create(dai.node.XLinkOut)
+        xoutNn.setStreamName("nn")
+        spatialDetectionNetwork.out.link(xoutNn.input)
 
         xoutDepth = pipeline.create(dai.node.XLinkOut)
         xoutDepth.setStreamName("depth")
@@ -407,6 +407,54 @@ class OakdTrackingYolo(object):
     def get_raw_frame(self) -> np.ndarray:
         return self.raw_frame
 
+    def get_labeled_frame(
+        self,
+        frame: np.ndarray,
+        tracklets: List[Any],
+        id: Optional[int] = None,
+        disp_info: bool = False,
+    ) -> np.ndarray:
+        for tracklet in tracklets:
+            if id is not None and tracklet.id != id:
+                continue
+            if tracklet.status.name == "TRACKED":
+                roi = tracklet.roi.denormalize(frame.shape[1], frame.shape[0])
+                x1 = int(roi.topLeft().x)
+                y1 = int(roi.topLeft().y)
+                x2 = int(roi.bottomRight().x)
+                y2 = int(roi.bottomRight().y)
+                try:
+                    label = self.labels[tracklet.label]
+                except Exception:
+                    label = tracklet.label
+                self.text.rectangle(frame, (x1, y1), (x2, y2), tracklet.id)
+                if disp_info:
+                    self.text.put_text(frame, str(label), (x1 + 10, y1 + 20))
+                    self.text.put_text(
+                        frame,
+                        f"ID: {[tracklet.id]}",
+                        (x1 + 10, y1 + 45),
+                    )
+                    self.text.put_text(frame, tracklet.status.name, (x1 + 10, y1 + 70))
+
+                    if tracklet.spatialCoordinates.z != 0:
+                        self.text.put_text(
+                            frame,
+                            "X: {:.2f} m".format(tracklet.spatialCoordinates.x / 1000),
+                            (x1 + 10, y1 + 95),
+                        )
+                        self.text.put_text(
+                            frame,
+                            "Y: {:.2f} m".format(tracklet.spatialCoordinates.y / 1000),
+                            (x1 + 10, y1 + 120),
+                        )
+                        self.text.put_text(
+                            frame,
+                            "Z: {:.2f} m".format(tracklet.spatialCoordinates.z / 1000),
+                            (x1 + 10, y1 + 145),
+                        )
+        return frame
+
     def display_frame(
         self, name: str, frame: np.ndarray, tracklets: List[Any], birds: bool = True
     ) -> None:
@@ -419,50 +467,9 @@ class OakdTrackingYolo(object):
                 ),
             )
             if tracklets is not None:
-                for tracklet in tracklets:
-                    if tracklet.status.name == "TRACKED":
-                        roi = tracklet.roi.denormalize(frame.shape[1], frame.shape[0])
-                        x1 = int(roi.topLeft().x)
-                        y1 = int(roi.topLeft().y)
-                        x2 = int(roi.bottomRight().x)
-                        y2 = int(roi.bottomRight().y)
-                        try:
-                            label = self.labels[tracklet.label]
-                        except Exception:
-                            label = tracklet.label
-                        self.text.put_text(frame, str(label), (x1 + 10, y1 + 20))
-                        self.text.put_text(
-                            frame,
-                            f"ID: {[tracklet.id]}",
-                            (x1 + 10, y1 + 45),
-                        )
-                        self.text.put_text(
-                            frame, tracklet.status.name, (x1 + 10, y1 + 70)
-                        )
-
-                        self.text.rectangle(frame, (x1, y1), (x2, y2), tracklet.id)
-                        if tracklet.spatialCoordinates.z != 0:
-                            self.text.put_text(
-                                frame,
-                                "X: {:.2f} m".format(
-                                    tracklet.spatialCoordinates.x / 1000
-                                ),
-                                (x1 + 10, y1 + 95),
-                            )
-                            self.text.put_text(
-                                frame,
-                                "Y: {:.2f} m".format(
-                                    tracklet.spatialCoordinates.y / 1000
-                                ),
-                                (x1 + 10, y1 + 120),
-                            )
-                            self.text.put_text(
-                                frame,
-                                "Z: {:.2f} m".format(
-                                    tracklet.spatialCoordinates.z / 1000
-                                ),
-                                (x1 + 10, y1 + 145),
-                            )
+                self.get_labeled_frame(
+                    self, frame=frame, tracklets=tracklets, disp_info=True
+                )
             cv2.putText(
                 frame,
                 "NN fps: {:.2f}".format(

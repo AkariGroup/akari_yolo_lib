@@ -248,9 +248,9 @@ class OakdSpatialYolo(object):
         spatialDetectionNetwork.passthrough.link(xoutRgb.input)
         stereo.depth.link(spatialDetectionNetwork.inputDepth)
 
-        xoutNN = pipeline.create(dai.node.XLinkOut)
-        xoutNN.setStreamName("nn")
-        spatialDetectionNetwork.out.link(xoutNN.input)
+        xoutNn = pipeline.create(dai.node.XLinkOut)
+        xoutNn.setStreamName("nn")
+        spatialDetectionNetwork.out.link(xoutNn.input)
 
         xoutRaw = pipeline.create(dai.node.XLinkOut)
         xoutRaw.setStreamName("raw")
@@ -351,43 +351,42 @@ class OakdSpatialYolo(object):
     def get_raw_frame(self) -> np.ndarray:
         return self.raw_frame
 
-    def display_frame(
-        self, name: str, frame: np.ndarray, detections: List[Any], birds: bool = True
-    ) -> None:
-        if frame is not None:
-            frame = cv2.resize(
+    def get_labeled_frame(
+        self,
+        frame: np.ndarray,
+        detections: List[Any],
+        id: Optional[int] = None,
+        disp_info: bool = False,
+    ) -> np.ndarray:
+        for detection in detections:
+            if id is not None and detections.id != id:
+                continue
+            # Denormalize bounding box
+            bbox = self.frame_norm(
                 frame,
                 (
-                    int(frame.shape[1] * DISPLAY_WINDOW_SIZE_RATE),
-                    int(frame.shape[0] * DISPLAY_WINDOW_SIZE_RATE),
+                    detection.xmin,
+                    detection.ymin,
+                    detection.xmax,
+                    detection.ymax,
                 ),
             )
-            for detection in detections:
-                # Denormalize bounding box
-                bbox = self.frame_norm(
-                    frame,
-                    (
-                        detection.xmin,
-                        detection.ymin,
-                        detection.xmax,
-                        detection.ymax,
-                    ),
-                )
-                x1 = bbox[0]
-                x2 = bbox[2]
-                y1 = bbox[1]
-                y2 = bbox[3]
-                try:
-                    label = self.labels[detection.label]
-                except BaseException:
-                    label = detection.label
+            x1 = bbox[0]
+            x2 = bbox[2]
+            y1 = bbox[1]
+            y2 = bbox[3]
+            try:
+                label = self.labels[detection.label]
+            except BaseException:
+                label = detection.label
+            self.text.rectangle(frame, (x1, y1), (x2, y2), detection.label)
+            if disp_info:
                 self.text.put_text(frame, str(label), (x1 + 10, y1 + 20))
                 self.text.put_text(
                     frame,
                     "{:.0f}%".format(detection.confidence * 100),
                     (x1 + 10, y1 + 50),
                 )
-                self.text.rectangle(frame, (x1, y1), (x2, y2), detection.label)
                 if detection.spatialCoordinates.z != 0:
                     self.text.put_text(
                         frame,
@@ -404,6 +403,23 @@ class OakdSpatialYolo(object):
                         "Z: {:.2f} m".format(detection.spatialCoordinates.z / 1000),
                         (x1 + 10, y1 + 140),
                     )
+        return frame
+
+    def display_frame(
+        self, name: str, frame: np.ndarray, detections: List[Any], birds: bool = True
+    ) -> None:
+        if frame is not None:
+            frame = cv2.resize(
+                frame,
+                (
+                    int(frame.shape[1] * DISPLAY_WINDOW_SIZE_RATE),
+                    int(frame.shape[0] * DISPLAY_WINDOW_SIZE_RATE),
+                ),
+            )
+            if detections is not None:
+                frame = self.get_labeled_frame(
+                    frame=frame, detections=detections, disp_info=True
+                )
             cv2.putText(
                 frame,
                 "NN fps: {:.2f}".format(
