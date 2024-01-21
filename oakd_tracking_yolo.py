@@ -467,9 +467,7 @@ class OakdTrackingYolo(object):
                 ),
             )
             if tracklets is not None:
-                self.get_labeled_frame(
-                    self, frame=frame, tracklets=tracklets, disp_info=True
-                )
+                self.get_labeled_frame(frame=frame, tracklets=tracklets, disp_info=True)
             cv2.putText(
                 frame,
                 "NN fps: {:.2f}".format(
