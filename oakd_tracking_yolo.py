@@ -4,6 +4,10 @@ import contextlib
 import json
 import math
 import time
+import copy
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
 
@@ -15,6 +19,7 @@ import numpy as np
 DISPLAY_WINDOW_SIZE_RATE = 2.0
 MAX_Z = 15000
 idColors = np.random.random(size=(256, 3)) * 256
+MAX_3D_Z = 3.0
 
 
 class TextHelper(object):
@@ -74,6 +79,8 @@ class OakdTrackingYolo(object):
         cam_debug: bool = False,
         robot_coordinate: bool = False,
         track_targets: Optional[List[Union[int, str]]] = None,
+        show_bird_frame: bool = True,
+        show_spatial_frame: bool = False,
     ) -> None:
         if not Path(config_path).exists():
             raise ValueError("Path {} does not poetry exist!".format(config_path))
@@ -122,6 +129,8 @@ class OakdTrackingYolo(object):
         self.cam_debug = cam_debug
         self.track_targets = track_targets
         self.robot_coordinate = robot_coordinate
+        self.show_bird_frame = show_bird_frame
+        self.show_spatial_frame = show_spatial_frame
         self._stack = contextlib.ExitStack()
         self._pipeline = self._create_pipeline()
         self._device = self._stack.enter_context(dai.Device(self._pipeline))
@@ -150,7 +159,10 @@ class OakdTrackingYolo(object):
         else:
             self.sync = HostSync(4)
         self.track = None
-        self.bird_eye_frame = self.create_bird_frame()
+        if self.show_bird_frame:
+            self.bird_eye_frame = self.create_bird_frame()
+        if self.show_spatial_frame:
+            self.create_spatial_frame()
         self.raw_frame = None
 
     def close(self) -> None:
@@ -181,7 +193,7 @@ class OakdTrackingYolo(object):
         ans = arr_y @ arr_p @ cur_pos
         return ans
 
-    def get_labels(self) -> None:
+    def get_labels(self) -> Any:
         return self.labels
 
     def _create_pipeline(self) -> dai.Pipeline:
@@ -455,9 +467,7 @@ class OakdTrackingYolo(object):
                         )
         return frame
 
-    def display_frame(
-        self, name: str, frame: np.ndarray, tracklets: List[Any], birds: bool = True
-    ) -> None:
+    def display_frame(self, name: str, frame: np.ndarray, tracklets: List[Any]) -> None:
         if frame is not None:
             frame = cv2.resize(
                 frame,
@@ -480,8 +490,10 @@ class OakdTrackingYolo(object):
             )
             # Show the frame
             cv2.imshow(name, frame)
-            if birds:
+            if self.show_bird_frame:
                 self.draw_bird_frame(tracklets)
+            if self.show_spatial_frame:
+                self.draw_spatial_frame(tracklets)
 
     def create_bird_frame(self) -> np.ndarray:
         fov = self.fov
@@ -545,3 +557,120 @@ class OakdTrackingYolo(object):
                         shift=0,
                     )
         cv2.imshow("birds", birds)
+
+    def create_spatial_frame(self) -> None:
+        self.fig = plt.figure()
+        self.ax = self.fig.add_subplot(111, projection="3d")
+        self.fig.show()
+        self.ax.view_init(elev=25, azim=-40, roll=0)
+
+    def draw_spatial_frame(self, tracklets: List[Any]) -> None:
+        # AKARIのヘッドを描画
+        start = time.time()
+        plt.cla()
+        self.ax.set_xlim([-1 * MAX_3D_Z / 2, MAX_3D_Z / 2])
+        self.ax.set_ylim([0, MAX_3D_Z])
+        self.ax.set_zlim([-1 * MAX_3D_Z / 2, MAX_3D_Z / 2])
+        self.ax.set_xlabel("X")
+        self.ax.set_ylabel("Z")
+        self.ax.set_zlabel("Y")
+        self.ax.plot(
+            [-1 * MAX_3D_Z / 2, MAX_3D_Z / 2],
+            [0, 0],
+            [0, 0],
+            color="gray",
+            linestyle="--",
+        )  # x=0の基準線
+        self.ax.plot(
+            [-1 * MAX_3D_Z / 2, -1 * MAX_3D_Z / 2],
+            [0, MAX_3D_Z],
+            [0, 0],
+            color="gray",
+            linestyle="--",
+        )  # x=0の基準線
+        self.ax.plot(
+            [0, 0],
+            [0, MAX_3D_Z],
+            [-1 * MAX_3D_Z / 2, -1 * MAX_3D_Z / 2],
+            color="gray",
+            linestyle="--",
+        )  # x=0の基準線
+        self.ax.plot(
+            [0, 0],
+            [0, 0],
+            [-1 * MAX_3D_Z / 2, MAX_3D_Z / 2],
+            color="gray",
+            linestyle="--",
+        )  # y=0の基準線
+        cam_width = MAX_3D_Z / 10.0
+        cam_height = MAX_3D_Z / 30.0
+        cam_depth = MAX_3D_Z / 15.0
+        vertices = np.array(
+            [
+                [0, 0, 0],
+                [cam_width, cam_depth, cam_height],
+                [-1 * cam_width, cam_depth, cam_height],
+                [-1 * cam_width, cam_depth, -1 * cam_height],
+                [cam_width, cam_depth, -1 * cam_height],
+            ]
+        )
+        pan = 0
+        tilt = 0
+        if self.robot_coordinate:
+            pan = self.joints.get_joint_positions()["pan"]
+            tilt = self.joints.get_joint_positions()["tilt"]
+            R_pan = np.array(
+                [
+                    [np.cos(pan), -np.sin(pan), 0],
+                    [np.sin(pan), np.cos(pan), 0],
+                    [0, 0, 1],
+                ]
+            )
+            R_tilt = np.array(
+                [
+                    [1, 0, 0],
+                    [0, np.cos(tilt), -np.sin(tilt)],
+                    [0, np.sin(tilt), np.cos(tilt)],
+                ]
+            )
+            rotation_matrix = np.dot(R_pan, R_tilt)
+            rotated_vertices = np.dot(vertices, rotation_matrix.T)
+
+            faces = [
+                [rotated_vertices[0], rotated_vertices[1], rotated_vertices[4]],
+                [rotated_vertices[1], rotated_vertices[2], rotated_vertices[4]],
+                [rotated_vertices[2], rotated_vertices[3], rotated_vertices[4]],
+                [rotated_vertices[3], rotated_vertices[0], rotated_vertices[4]],
+                [
+                    rotated_vertices[0],
+                    rotated_vertices[1],
+                    rotated_vertices[2],
+                    rotated_vertices[3],
+                ],
+            ]
+            self.ax.add_collection3d(
+                Poly3DCollection(
+                    faces,
+                    facecolors="black",
+                    linewidths=1,
+                    edgecolors="black",
+                    alpha=0.5,
+                )
+            )
+        if tracklets is not None:
+            for i in range(0, len(tracklets)):
+                if tracklets[i].status.name == "TRACKED":
+                    # Y軸とZ軸は表示の観点から反転
+                    x = tracklets[i].spatialCoordinates.x / 1000
+                    y = tracklets[i].spatialCoordinates.z / 1000
+                    z = tracklets[i].spatialCoordinates.y / 1000
+                    color = [
+                        idColors[tracklets[i].id][2] / 255,
+                        idColors[tracklets[i].id][1] / 255,
+                        idColors[tracklets[i].id][0] / 255,
+                    ]
+                    self.ax.scatter(x, y, z, color=color)
+        plt.pause(0.001)
+        plt.draw()
+
+        print(f"total: {time.time()-start}")
