@@ -4,9 +4,7 @@ import contextlib
 import json
 import math
 import time
-import copy
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
