@@ -562,11 +562,9 @@ class OakdTrackingYolo(object):
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111, projection="3d")
         self.fig.show()
-        self.ax.view_init(elev=25, azim=-40, roll=0)
+        self.ax.view_init(elev=25, azim=40, roll=0)
 
     def draw_spatial_frame(self, tracklets: List[Any]) -> None:
-        # AKARIのヘッドを描画
-        start = time.time()
         plt.cla()
         self.ax.set_xlim([-1 * MAX_3D_Z / 2, MAX_3D_Z / 2])
         self.ax.set_ylim([0, MAX_3D_Z])
@@ -602,21 +600,23 @@ class OakdTrackingYolo(object):
             color="gray",
             linestyle="--",
         )  # y=0の基準線
-        cam_width = MAX_3D_Z / 10.0
-        cam_height = MAX_3D_Z / 30.0
-        cam_depth = MAX_3D_Z / 15.0
-        vertices = np.array(
-            [
-                [0, 0, 0],
-                [cam_width, cam_depth, cam_height],
-                [-1 * cam_width, cam_depth, cam_height],
-                [-1 * cam_width, cam_depth, -1 * cam_height],
-                [cam_width, cam_depth, -1 * cam_height],
-            ]
-        )
-        pan = 0
-        tilt = 0
+
         if self.robot_coordinate:
+            # AKARIのヘッドを描画
+            cam_width = MAX_3D_Z / 10.0
+            cam_height = MAX_3D_Z / 30.0
+            cam_depth = MAX_3D_Z / 15.0
+            vertices = np.array(
+                [
+                    [0, 0, 0],
+                    [cam_width, cam_depth, cam_height],
+                    [-1 * cam_width, cam_depth, cam_height],
+                    [-1 * cam_width, cam_depth, -1 * cam_height],
+                    [cam_width, cam_depth, -1 * cam_height],
+                ]
+            )
+            pan = 0
+            tilt = 0
             pan = self.joints.get_joint_positions()["pan"]
             tilt = self.joints.get_joint_positions()["tilt"]
             R_pan = np.array(
@@ -671,6 +671,3 @@ class OakdTrackingYolo(object):
                     ]
                     self.ax.scatter(x, y, z, color=color)
         plt.pause(0.001)
-        plt.draw()
-
-        print(f"total: {time.time()-start}")
