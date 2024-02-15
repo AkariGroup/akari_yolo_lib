@@ -75,7 +75,7 @@ class OakdSpatialYolo(object):
         robot_coordinate: bool = False,
     ) -> None:
         if not Path(config_path).exists():
-            raise ValueError("Path {} does not poetry exist!".format(config_path))
+            raise ValueError("Path {} does not exist!".format(config_path))
         with Path(config_path).open() as f:
             config = json.load(f)
         nnConfig = config.get("nn_config", {})

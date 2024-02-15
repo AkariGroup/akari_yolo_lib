@@ -18,7 +18,7 @@ DISPLAY_WINDOW_SIZE_RATE = 2.0
 class OakdYolo(object):
     def __init__(self, config_path: str, model_path: str, fps: int = 10) -> None:
         if not Path(config_path).exists():
-            raise ValueError("Path {} does not poetry exist!".format(config_path))
+            raise ValueError("Path {} does not exist!".format(config_path))
         with Path(config_path).open() as f:
             config = json.load(f)
         nnConfig = config.get("nn_config", {})
