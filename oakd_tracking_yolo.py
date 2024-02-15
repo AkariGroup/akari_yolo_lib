@@ -4,7 +4,9 @@ import contextlib
 import json
 import math
 import time
+import copy
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
@@ -17,8 +19,6 @@ import numpy as np
 DISPLAY_WINDOW_SIZE_RATE = 2.0
 MAX_Z = 15000
 idColors = np.random.random(size=(256, 3)) * 256
-MAX_3D_Z = 3.0
-
 
 class TextHelper(object):
     def __init__(self) -> None:
@@ -141,6 +141,7 @@ class OakdTrackingYolo(object):
         self.qTrack = self._device.getOutputQueue(
             "tracklets", maxSize=4, blocking=False
         )
+        self.spatial_frame_range = 3.0
         self.counter = 0
         self.startTime = time.monotonic()
         self.frame_name = 0
@@ -556,65 +557,68 @@ class OakdTrackingYolo(object):
                     )
         cv2.imshow("birds", birds)
 
+    def set_spatial_frame_range(self, range: float) -> None:
+        self.spatial_frame_range = range
+
     def create_spatial_frame(self) -> None:
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111, projection="3d")
         self.fig.show()
-        self.ax.view_init(elev=25, azim=40, roll=0)
+        self.ax.view_init(elev=25, azim=-40, roll=0)
 
     def draw_spatial_frame(self, tracklets: List[Any]) -> None:
+        # AKARIのヘッドを描画
+        start = time.time()
         plt.cla()
-        self.ax.set_xlim([-1 * MAX_3D_Z / 2, MAX_3D_Z / 2])
-        self.ax.set_ylim([0, MAX_3D_Z])
-        self.ax.set_zlim([-1 * MAX_3D_Z / 2, MAX_3D_Z / 2])
+        self.ax.set_xlim([-1 * self.spatial_frame_range / 2, self.spatial_frame_range / 2])
+        self.ax.set_ylim([0, self.spatial_frame_range])
+        self.ax.set_zlim([-1 * self.spatial_frame_range / 2, self.spatial_frame_range / 2])
         self.ax.set_xlabel("X")
         self.ax.set_ylabel("Z")
         self.ax.set_zlabel("Y")
         self.ax.plot(
-            [-1 * MAX_3D_Z / 2, MAX_3D_Z / 2],
+            [-1 * self.spatial_frame_range / 2, self.spatial_frame_range / 2],
             [0, 0],
             [0, 0],
             color="gray",
             linestyle="--",
         )  # x=0の基準線
         self.ax.plot(
-            [-1 * MAX_3D_Z / 2, -1 * MAX_3D_Z / 2],
-            [0, MAX_3D_Z],
+            [-1 * self.spatial_frame_range / 2, -1 * self.spatial_frame_range / 2],
+            [0, self.spatial_frame_range],
             [0, 0],
             color="gray",
             linestyle="--",
         )  # x=0の基準線
         self.ax.plot(
             [0, 0],
-            [0, MAX_3D_Z],
-            [-1 * MAX_3D_Z / 2, -1 * MAX_3D_Z / 2],
+            [0, self.spatial_frame_range],
+            [-1 * self.spatial_frame_range / 2, -1 * self.spatial_frame_range / 2],
             color="gray",
             linestyle="--",
         )  # x=0の基準線
         self.ax.plot(
             [0, 0],
             [0, 0],
-            [-1 * MAX_3D_Z / 2, MAX_3D_Z / 2],
+            [-1 * self.spatial_frame_range / 2, self.spatial_frame_range / 2],
             color="gray",
             linestyle="--",
         )  # y=0の基準線
-
+        cam_width = self.spatial_frame_range / 10.0
+        cam_height = self.spatial_frame_range / 30.0
+        cam_depth = self.spatial_frame_range / 15.0
+        vertices = np.array(
+            [
+                [0, 0, 0],
+                [cam_width, cam_depth, cam_height],
+                [-1 * cam_width, cam_depth, cam_height],
+                [-1 * cam_width, cam_depth, -1 * cam_height],
+                [cam_width, cam_depth, -1 * cam_height],
+            ]
+        )
+        pan = 0
+        tilt = 0
         if self.robot_coordinate:
-            # AKARIのヘッドを描画
-            cam_width = MAX_3D_Z / 10.0
-            cam_height = MAX_3D_Z / 30.0
-            cam_depth = MAX_3D_Z / 15.0
-            vertices = np.array(
-                [
-                    [0, 0, 0],
-                    [cam_width, cam_depth, cam_height],
-                    [-1 * cam_width, cam_depth, cam_height],
-                    [-1 * cam_width, cam_depth, -1 * cam_height],
-                    [cam_width, cam_depth, -1 * cam_height],
-                ]
-            )
-            pan = 0
-            tilt = 0
             pan = self.joints.get_joint_positions()["pan"]
             tilt = self.joints.get_joint_positions()["tilt"]
             R_pan = np.array(
@@ -669,3 +673,6 @@ class OakdTrackingYolo(object):
                     ]
                     self.ax.scatter(x, y, z, color=color)
         plt.pause(0.001)
+        plt.draw()
+
+        print(f"total: {time.time()-start}")
