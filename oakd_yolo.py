@@ -20,6 +20,7 @@ class OakdYolo(object):
     OAK-Dカメラを使用してYOLO物体認識を行うクラス。
 
     """
+
     def __init__(self, config_path: str, model_path: str, fps: int = 10) -> None:
         """クラスの初期化コンストラクタ。
 
@@ -90,9 +91,7 @@ class OakdYolo(object):
         self.raw_frame = None
 
     def close(self) -> None:
-        """OAK-Dを閉じる。
-
-        """
+        """OAK-Dを閉じる。"""
         self._device.close()
 
     def set_camera_brightness(self, brightness: int) -> None:

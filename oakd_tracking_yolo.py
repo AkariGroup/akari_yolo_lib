@@ -725,7 +725,6 @@ class OakdTrackingYolo(object):
 
         """
         # AKARIのヘッドを描画
-        start = time.time()
         plt.cla()
         self.ax.set_xlim(
             [-1 * self.spatial_frame_range / 2, self.spatial_frame_range / 2]
@@ -835,5 +834,3 @@ class OakdTrackingYolo(object):
                     self.ax.scatter(x, y, z, color=color)
         plt.pause(0.001)
         plt.draw()
-
-        print(f"total: {time.time()-start}")

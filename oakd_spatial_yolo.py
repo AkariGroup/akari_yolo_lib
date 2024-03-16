@@ -24,9 +24,7 @@ class TextHelper(object):
     """
 
     def __init__(self) -> None:
-        """クラスのコンストラクタ
-
-        """
+        """クラスのコンストラクタ"""
         self.bg_color = (0, 0, 0)
         self.color = (255, 255, 255)
         self.text_type = cv2.FONT_HERSHEY_SIMPLEX
@@ -67,9 +65,8 @@ class TextHelper(object):
 
 
 class HostSync(object):
-    """各フレームのメッセージを同期するクラス。
+    """各フレームのメッセージを同期するクラス。"""
 
-    """
     def __init__(self, sync_size: int = 4):
         """HostSyncクラスの初期化メソッド。
 
@@ -115,9 +112,8 @@ class HostSync(object):
 
 
 class OakdSpatialYolo(object):
-    """OAK-Dを使用してYOLO3次元物体認識を行うクラス。
+    """OAK-Dを使用してYOLO3次元物体認識を行うクラス。"""
 
-    """
     def __init__(
         self,
         config_path: str,
@@ -213,9 +209,7 @@ class OakdSpatialYolo(object):
         self.raw_frame = None
 
     def close(self) -> None:
-        """OAK-Dを閉じる。
-
-        """
+        """OAK-Dを閉じる。"""
         self._device.close()
 
     def convert_to_pos_from_akari(self, pos: Any, pitch: float, yaw: float) -> Any:
