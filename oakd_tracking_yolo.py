@@ -406,6 +406,7 @@ class OakdTrackingYolo(object):
 
         Returns:
             List[int]: フレームサイズで正規化された整数座標のリスト。
+
         """
         normVals = np.full(len(bbox), frame.shape[0])
         normVals[::2] = frame.shape[1]
@@ -416,6 +417,7 @@ class OakdTrackingYolo(object):
 
         Returns:
             Union[np.ndarray, List[Any]]: フレーム画像と検出結果のリストのタプル。
+
         """
         frame = None
         detections = []
@@ -527,6 +529,7 @@ class OakdTrackingYolo(object):
 
         Returns:
             np.ndarray: 生画像フレーム。
+
         """
         return self.raw_frame
 
