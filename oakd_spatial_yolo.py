@@ -18,13 +18,28 @@ idColors = np.random.random(size=(256, 3)) * 256
 
 
 class TextHelper(object):
+    """
+    フレームに文字列を描画するクラス
+
+    """
+
     def __init__(self) -> None:
+        """クラスのコンストラクタ"""
         self.bg_color = (0, 0, 0)
         self.color = (255, 255, 255)
         self.text_type = cv2.FONT_HERSHEY_SIMPLEX
         self.line_type = cv2.LINE_AA
 
     def put_text(self, frame: np.ndarray, text: str, coords: Tuple[int, int]) -> None:
+        """
+        フレームに文字列を描画する。
+
+        Args:
+            frame (np.ndarray): 描画対象の画像フレーム。
+            text (str): 描画する文字列。
+            coords (Tuple[int, int]): 描画開始位置の座標。
+
+        """
         cv2.putText(
             frame, text, coords, self.text_type, 0.8, self.bg_color, 3, self.line_type
         )
@@ -35,17 +50,43 @@ class TextHelper(object):
     def rectangle(
         self, frame: np.ndarray, p1: Tuple[float], p2: Tuple[float], id: int
     ) -> None:
+        """
+        フレームに矩形を描画する。
+
+        Args:
+            frame (np.ndarray): 描画対象の画像フレーム。
+            p1 (Tuple[float]): 矩形の開始座標。
+            p2 (Tuple[float]): 矩形の終了座標。
+            id (int): オブジェクトのID。
+
+        """
         cv2.rectangle(frame, p1, p2, (0, 0, 0), 4)
         cv2.rectangle(frame, p1, p2, idColors[id], 2)
 
 
 class HostSync(object):
+    """各フレームのメッセージを同期するクラス。"""
+
     def __init__(self, sync_size: int = 4):
+        """HostSyncクラスの初期化メソッド。
+
+        Args:
+            sync_size (int, optional): 同期するメッセージの数。デフォルトは4。
+
+        """
         self.dict = {}
         self.head_seq = 0
         self.sync_size = sync_size
 
     def add_msg(self, name: str, msg: Any, seq: Optional[str] = None) -> None:
+        """メッセージをDictに追加するメソッド。
+
+        Args:
+            name (str): メッセージの名前。
+            msg (Any): 追加するメッセージ。
+            seq (str, optional): メッセージのシーケンス番号。デフォルトはNone。
+
+        """
         if seq is None:
             seq = str(msg.getSequenceNum())
         if seq not in self.dict:
@@ -53,6 +94,12 @@ class HostSync(object):
         self.dict[seq][name] = msg
 
     def get_msgs(self) -> Any:
+        """同期されたメッセージを取得するメソッド。
+
+        Returns:
+            Any: 同期されたメッセージ。
+
+        """
         remove = []
         for name in self.dict:
             remove.append(name)
@@ -65,6 +112,8 @@ class HostSync(object):
 
 
 class OakdSpatialYolo(object):
+    """OAK-Dを使用してYOLO3次元物体認識を行うクラス。"""
+
     def __init__(
         self,
         config_path: str,
@@ -74,6 +123,17 @@ class OakdSpatialYolo(object):
         cam_debug: bool = False,
         robot_coordinate: bool = False,
     ) -> None:
+        """クラスの初期化メソッド。
+
+        Args:
+            config_path (str): YOLOモデルの設定ファイルのパス。
+            model_path (str): YOLOモデルファイルのパス。
+            fps (int): カメラのフレームレート。
+            fov (float): カメラの視野角 (degree)。
+            cam_debug (bool, optional): カメラのデバッグ用ウィンドウを表示するかどうか。デフォルトはFalse。
+            robot_coordinate (bool, optional): ロボットのヘッド向きを使って物体の位置を変換するかどうか。デフォルトはFalse。
+
+        """
         if not Path(config_path).exists():
             raise ValueError("Path {} does not exist!".format(config_path))
         with Path(config_path).open() as f:
@@ -149,9 +209,21 @@ class OakdSpatialYolo(object):
         self.raw_frame = None
 
     def close(self) -> None:
+        """OAK-Dを閉じる。"""
         self._device.close()
 
     def convert_to_pos_from_akari(self, pos: Any, pitch: float, yaw: float) -> Any:
+        """入力されたAKARIのヘッドの向きに応じて、カメラからの三次元位置をAKARI正面からの位置に変換する。
+
+        Args:
+            pos (Any): 物体の3次元位置。
+            pitch (float): AKARIのヘッドのチルト角度。
+            yaw (float): AKARIのヘッドのパン角度。
+
+        Returns:
+            Any: 変換後の3次元位置。
+
+        """
         pitch = -1 * pitch
         yaw = -1 * yaw
         cur_pos = np.array([[pos.x], [pos.y], [pos.z]])
@@ -177,9 +249,21 @@ class OakdSpatialYolo(object):
         return ans
 
     def get_labels(self):
+        """認識ラベルファイルから読み込んだラベルのリストを取得する。
+
+        Returns:
+            List[str]: 認識ラベルのリスト。
+
+        """
         return self.labels
 
     def _create_pipeline(self) -> dai.Pipeline:
+        """OAK-Dのパイプラインを作成する。
+
+        Returns:
+            dai.Pipeline: OAK-Dのパイプライン。
+
+        """
         # Create pipeline
         pipeline = dai.Pipeline()
         device = dai.Device()
@@ -262,11 +346,27 @@ class OakdSpatialYolo(object):
         return pipeline
 
     def frame_norm(self, frame: np.ndarray, bbox: Tuple[float]) -> List[int]:
+        """画像フレーム内のbounding boxの座標をフレームサイズで正規化する。
+
+        Args:
+            frame (np.ndarray): 画像フレーム。
+            bbox (Tuple[float]): bounding boxの座標 (xmin, ymin, xmax, ymax)。
+
+        Returns:
+            List[int]: フレームサイズで正規化された整数座標のリスト。
+
+        """
         normVals = np.full(len(bbox), frame.shape[0])
         normVals[::2] = frame.shape[1]
         return (np.clip(np.array(bbox), 0, 1) * normVals).astype(int)
 
     def get_frame(self) -> Union[np.ndarray, List[Any]]:
+        """フレーム画像と検出結果を取得する。
+
+        Returns:
+            Union[np.ndarray, List[Any]]: フレーム画像と検出結果のリストのタプル。
+
+        """
         frame = None
         detections = []
         ret = False
@@ -349,6 +449,12 @@ class OakdSpatialYolo(object):
         return frame, detections
 
     def get_raw_frame(self) -> np.ndarray:
+        """カメラで撮影した生の画像フレームを取得する。
+
+        Returns:
+            np.ndarray: 生画像フレーム。
+
+        """
         return self.raw_frame
 
     def get_labeled_frame(
@@ -358,6 +464,18 @@ class OakdSpatialYolo(object):
         id: Optional[int] = None,
         disp_info: bool = False,
     ) -> np.ndarray:
+        """認識結果をフレーム画像に描画する。
+
+        Args:
+            frame (np.ndarray): 画像フレーム。
+            detections (List[Any]): 検出結果のリスト。
+            id (Optional[int], optional): 描画するオブジェクトのID。指定すると、そのIDのみを描画した画像フレームを返す。指定しない場合は全てのオブジェクトを描画する。
+            disp_info (bool, optional): クラス名とconfidenceをフレーム内に表示するかどうか。デフォルトはFalse。
+
+        Returns:
+            np.ndarray: 描画された画像フレーム。
+
+        """
         for detection in detections:
             if id is not None and detections.id != id:
                 continue
@@ -408,6 +526,15 @@ class OakdSpatialYolo(object):
     def display_frame(
         self, name: str, frame: np.ndarray, detections: List[Any], birds: bool = True
     ) -> None:
+        """画像フレームと認識結果を描画する。
+
+        Args:
+            name (str): ウィンドウ名。
+            frame (np.ndarray): 画像フレーム。
+            detections (List[Any]): 認識結果のリスト。
+            birds(bool): 俯瞰フレームを表示するかどうか。デフォルトはTrue。
+
+        """
         if frame is not None:
             frame = cv2.resize(
                 frame,
@@ -436,6 +563,13 @@ class OakdSpatialYolo(object):
                 self.draw_bird_frame(detections)
 
     def create_bird_frame(self) -> np.ndarray:
+        """
+        俯瞰フレームを生成する。
+
+        Returns:
+            np.ndarray: 俯瞰フレーム。
+
+        """
         fov = self.fov
         frame = np.zeros((300, 300, 3), np.uint8)
         cv2.rectangle(
@@ -459,6 +593,14 @@ class OakdSpatialYolo(object):
         return frame
 
     def draw_bird_frame(self, detections: List[Any], show_labels: bool = False) -> None:
+        """
+        俯瞰フレームに検出結果を描画する。
+
+        Args:
+            detections (List[Any]): 認識結果のリスト。
+            show_labels (bool, optional): ラベルを表示するかどうか。デフォルトはFalse。
+
+        """
         birds = self.bird_eye_frame.copy()
         global MAX_Z
         max_x = MAX_Z / 2  # mm

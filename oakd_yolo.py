@@ -16,7 +16,20 @@ DISPLAY_WINDOW_SIZE_RATE = 2.0
 
 
 class OakdYolo(object):
+    """
+    OAK-Dカメラを使用してYOLO物体認識を行うクラス。
+
+    """
+
     def __init__(self, config_path: str, model_path: str, fps: int = 10) -> None:
+        """クラスの初期化コンストラクタ。
+
+        Args:
+            config_path (str): 認識ラベルファイルのパス。
+            model_path (str): 認識モデルファイルのパス。
+            fps (int, optional): カメラのフレームレート。デフォルトは10。
+
+        """
         if not Path(config_path).exists():
             raise ValueError("Path {} does not exist!".format(config_path))
         with Path(config_path).open() as f:
@@ -78,19 +91,36 @@ class OakdYolo(object):
         self.raw_frame = None
 
     def close(self) -> None:
+        """OAK-Dを閉じる。"""
         self._device.close()
 
     def set_camera_brightness(self, brightness: int) -> None:
+        """カメラの明るさを設定する。
+
+        Args:
+            brightness (int): 明るさ。デフォルトは0で-10~10の範囲で変更可能。
+
+        """
         ctrl = dai.CameraControl()
         ctrl.setBrightness(brightness)
         self.qControl.send(ctrl)
 
     def get_labels(self) -> List[str]:
+        """認識ラベルファイルから読み込んだラベルのリストを取得する。
+
+        Returns:
+            List[str]: 認識ラベルのリスト。
+
+        """
         return self.labels
 
     def _create_pipeline(self) -> dai.Pipeline:
-        # OAK-Dのセットアップ
-        # Create pipeline
+        """OAK-Dのパイプラインを作成する。
+
+        Returns:
+            dai.Pipeline: OAK-Dのパイプライン。
+
+        """
         pipeline = dai.Pipeline()
 
         # Define sources and outputs
@@ -139,11 +169,25 @@ class OakdYolo(object):
         return pipeline
 
     def frame_norm(self, frame: np.ndarray, bbox: Tuple[float]) -> List[int]:
+        """画像フレーム内のbounding boxの座標をフレームサイズで正規化する。
+
+        Args:
+            frame (np.ndarray): 画像フレーム。
+            bbox (Tuple[float]): bounding boxの座標 (xmin, ymin, xmax, ymax)。
+
+        Returns:
+            List[int]: フレームサイズで正規化された整数座標のリスト。
+        """
         normVals = np.full(len(bbox), frame.shape[0])
         normVals[::2] = frame.shape[1]
         return (np.clip(np.array(bbox), 0, 1) * normVals).astype(int)
 
     def get_frame(self) -> Union[np.ndarray, List[Any]]:
+        """フレーム画像と検出結果を取得する。
+
+        Returns:
+            Union[np.ndarray, List[Any]]: フレーム画像と検出結果のリストのタプル。
+        """
         try:
             inRgb = self.qRgb.get()
             inRaw = self.qRaw.get()
@@ -174,6 +218,11 @@ class OakdYolo(object):
         return frame, detections
 
     def get_raw_frame(self) -> np.ndarray:
+        """カメラで撮影した生の画像フレームを取得する。
+
+        Returns:
+            np.ndarray: 生画像フレーム。
+        """
         return self.raw_frame
 
     def get_labeled_frame(
@@ -183,6 +232,18 @@ class OakdYolo(object):
         id: Optional[int] = None,
         disp_info: bool = False,
     ) -> np.ndarray:
+        """認識結果をフレーム画像に描画する。
+
+        Args:
+            frame (np.ndarray): 画像フレーム。
+            detections (List[Any]): 検出結果のリスト。
+            id (Optional[int], optional): 描画するオブジェクトのID。指定すると、そのIDのみを描画した画像フレームを返す。指定しない場合は全てのオブジェクトを描画する。
+            disp_info (bool, optional): クラス名とconfidenceをフレーム内に表示するかどうか。デフォルトはFalse。
+
+        Returns:
+            np.ndarray: 描画された画像フレーム。
+
+        """
         for detection in detections:
             if id is not None and detections.id != id:
                 continue
@@ -217,6 +278,13 @@ class OakdYolo(object):
     def display_frame(
         self, name: str, frame: np.ndarray, detections: List[Any]
     ) -> None:
+        """画像フレームと認識結果を描画する。
+
+        Args:
+            name (str): ウィンドウ名。
+            frame (np.ndarray): 画像フレーム。
+            detections (List[Any]): 認識結果のリスト。
+        """
         if frame is not None:
             frame = cv2.resize(
                 frame,
