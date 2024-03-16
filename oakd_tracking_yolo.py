@@ -4,17 +4,15 @@ import contextlib
 import json
 import math
 import time
-import copy
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
 
 import blobconverter
 import cv2
 import depthai as dai
+import matplotlib.pyplot as plt
 import numpy as np
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 DISPLAY_WINDOW_SIZE_RATE = 2.0
 MAX_Z = 15000
@@ -26,10 +24,9 @@ class TextHelper(object):
     フレームに文字列を描画するクラス
 
     """
-    def __init__(self) -> None:
-        """クラスのコンストラクタ
 
-        """
+    def __init__(self) -> None:
+        """クラスのコンストラクタ"""
         self.bg_color = (0, 0, 0)
         self.color = (255, 255, 255)
         self.text_type = cv2.FONT_HERSHEY_SIMPLEX
@@ -70,9 +67,8 @@ class TextHelper(object):
 
 
 class HostSync(object):
-    """各フレームのメッセージを同期するクラス。
+    """各フレームのメッセージを同期するクラス。"""
 
-    """
     def __init__(self, sync_size: int = 4):
         """HostSyncクラスの初期化メソッド。
 
@@ -118,9 +114,8 @@ class HostSync(object):
 
 
 class OakdTrackingYolo(object):
-    """OAK-Dを使用してYOLO3次元物体トラッキングを行うクラス。
+    """OAK-Dを使用してYOLO3次元物体トラッキングを行うクラス。"""
 
-    """
     def __init__(
         self,
         config_path: str,
@@ -232,9 +227,7 @@ class OakdTrackingYolo(object):
         self.raw_frame = None
 
     def close(self) -> None:
-        """OAK-Dを閉じる。
-
-        """
+        """OAK-Dを閉じる。"""
         self._device.close()
 
     def convert_to_pos_from_akari(self, pos: Any, pitch: float, yaw: float) -> Any:
@@ -718,9 +711,7 @@ class OakdTrackingYolo(object):
         self.spatial_frame_range = range
 
     def create_spatial_frame(self) -> None:
-        """3次元プロットを作成する。
-
-        """
+        """3次元プロットを作成する。"""
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111, projection="3d")
         self.fig.show()
@@ -736,9 +727,13 @@ class OakdTrackingYolo(object):
         # AKARIのヘッドを描画
         start = time.time()
         plt.cla()
-        self.ax.set_xlim([-1 * self.spatial_frame_range / 2, self.spatial_frame_range / 2])
+        self.ax.set_xlim(
+            [-1 * self.spatial_frame_range / 2, self.spatial_frame_range / 2]
+        )
         self.ax.set_ylim([0, self.spatial_frame_range])
-        self.ax.set_zlim([-1 * self.spatial_frame_range / 2, self.spatial_frame_range / 2])
+        self.ax.set_zlim(
+            [-1 * self.spatial_frame_range / 2, self.spatial_frame_range / 2]
+        )
         self.ax.set_xlabel("X")
         self.ax.set_ylabel("Z")
         self.ax.set_zlabel("Y")
