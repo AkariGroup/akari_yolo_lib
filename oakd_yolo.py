@@ -18,6 +18,7 @@ DISPLAY_WINDOW_SIZE_RATE = 2.0
 class OakdYolo(object):
     """
     OAK-Dカメラを使用してYOLO物体認識を行うクラス。
+
     """
     def __init__(self, config_path: str, model_path: str, fps: int = 10) -> None:
         """クラスの初期化コンストラクタ。
