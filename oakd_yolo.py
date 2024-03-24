@@ -52,20 +52,20 @@ class OakdYolo(object):
         self.confidenceThreshold = metadata.get("confidence_threshold", {})
 
         print(metadata)
-        self.cam_fps = fps
+        self.fps = fps
         # parse labels
         nnMappings = config.get("mappings", {})
         self.labels = nnMappings.get("labels", {})
 
-        self.nnPath = Path(model_path)
+        self.nn_path = Path(model_path)
         # get model path
-        if not self.nnPath.exists():
+        if not self.nn_path.exists():
             print(
                 "No blob found at {}. Looking into DepthAI model zoo.".format(
-                    self.nnPath
+                    self.nn_path
                 )
             )
-            self.nnPath = str(
+            self.nn_path = Path(
                 blobconverter.from_zoo(
                     model_path, shaves=6, zoo_type="depthai", use_cache=True
                 )
@@ -82,12 +82,11 @@ class OakdYolo(object):
         self.qRaw = self._device.getOutputQueue(name="raw")
         self.qDet = self._device.getOutputQueue(name="nn", maxSize=4, blocking=False)
         self.counter = 0
-        self.startTime = time.monotonic()
+        self.start_time = time.monotonic()
         self.frame_name = 0
         self.dir_name = ""
         self.path = ""
         self.num = 0
-        self.counter = 0
         self.raw_frame = None
 
     def close(self) -> None:
@@ -140,7 +139,7 @@ class OakdYolo(object):
         camRgb.setInterleaved(False)
         camRgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
         camRgb.setPreviewSize(1920, 1080)
-        camRgb.setFps(self.cam_fps)
+        camRgb.setFps(self.fps)
 
         xoutRaw = pipeline.create(dai.node.XLinkOut)
         xoutRaw.setStreamName("raw")
@@ -158,7 +157,7 @@ class OakdYolo(object):
         detectionNetwork.setAnchors(self.anchors)
         detectionNetwork.setAnchorMasks(self.anchorMasks)
         detectionNetwork.setIouThreshold(self.iouThreshold)
-        detectionNetwork.setBlobPath(self.nnPath)
+        detectionNetwork.setBlobPath(self.nn_path)
         detectionNetwork.setNumInferenceThreads(2)
         detectionNetwork.input.setBlocking(False)
 
@@ -300,7 +299,7 @@ class OakdYolo(object):
             cv2.putText(
                 frame,
                 "NN fps: {:.2f}".format(
-                    self.counter / (time.monotonic() - self.startTime)
+                    self.counter / (time.monotonic() - self.start_time)
                 ),
                 (2, frame.shape[0] - 4),
                 cv2.FONT_HERSHEY_TRIPLEX,
