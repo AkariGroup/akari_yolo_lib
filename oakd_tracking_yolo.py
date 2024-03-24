@@ -13,6 +13,7 @@ import depthai as dai
 import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
 from .util import HostSync, TextHelper
 
 DISPLAY_WINDOW_SIZE_RATE = 2.0
@@ -86,7 +87,7 @@ class OakdTrackingYolo(object):
                     self.nn_path
                 )
             )
-            self.nn_path = str(
+            self.nn_path = Path(
                 blobconverter.from_zoo(
                     model_path, shaves=6, zoo_type="depthai", use_cache=True
                 )
@@ -465,9 +466,7 @@ class OakdTrackingYolo(object):
                     label = self.labels[tracklet.label]
                 except Exception:
                     label = tracklet.label
-                self.text.rectangle(
-                    frame, (x1, y1), (x2, y2), idColors[tracklet.id]
-                )
+                self.text.rectangle(frame, (x1, y1), (x2, y2), idColors[tracklet.id])
                 if disp_info:
                     self.text.put_text(frame, str(label), (x1 + 10, y1 + 20))
                     self.text.put_text(

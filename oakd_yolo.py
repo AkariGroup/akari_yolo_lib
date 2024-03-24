@@ -65,7 +65,7 @@ class OakdYolo(object):
                     self.nn_path
                 )
             )
-            self.nn_path = str(
+            self.nn_path = Path(
                 blobconverter.from_zoo(
                     model_path, shaves=6, zoo_type="depthai", use_cache=True
                 )
@@ -88,7 +88,6 @@ class OakdYolo(object):
         self.path = ""
         self.num = 0
         self.raw_frame = None
-
 
     def close(self) -> None:
         """OAK-Dを閉じる。"""

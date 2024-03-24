@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 
 import os
+from typing import Any, Optional, Tuple
+
 import cv2
+import numpy as np
 import requests
 from tqdm import tqdm
-from typing import Any, List, Optional, Tuple, Union
-import numpy as np
 
 
 def download_file(path: str, link: str) -> None:

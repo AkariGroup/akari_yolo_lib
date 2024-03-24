@@ -11,6 +11,7 @@ import blobconverter
 import cv2
 import depthai as dai
 import numpy as np
+
 from .util import HostSync, TextHelper
 
 DISPLAY_WINDOW_SIZE_RATE = 2.0
@@ -78,7 +79,7 @@ class OakdSpatialYolo(object):
                     self.nn_path
                 )
             )
-            self.nn_path = str(
+            self.nn_path = Path(
                 blobconverter.from_zoo(
                     model_path, shaves=6, zoo_type="depthai", use_cache=True
                 )
