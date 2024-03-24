@@ -11,104 +11,11 @@ import blobconverter
 import cv2
 import depthai as dai
 import numpy as np
+from .util import HostSync, TextHelper
 
 DISPLAY_WINDOW_SIZE_RATE = 2.0
 MAX_Z = 15000
 idColors = np.random.random(size=(256, 3)) * 256
-
-
-class TextHelper(object):
-    """
-    フレームに文字列を描画するクラス
-
-    """
-
-    def __init__(self) -> None:
-        """クラスのコンストラクタ"""
-        self.bg_color = (0, 0, 0)
-        self.color = (255, 255, 255)
-        self.text_type = cv2.FONT_HERSHEY_SIMPLEX
-        self.line_type = cv2.LINE_AA
-
-    def put_text(self, frame: np.ndarray, text: str, coords: Tuple[int, int]) -> None:
-        """
-        フレームに文字列を描画する。
-
-        Args:
-            frame (np.ndarray): 描画対象の画像フレーム。
-            text (str): 描画する文字列。
-            coords (Tuple[int, int]): 描画開始位置の座標。
-
-        """
-        cv2.putText(
-            frame, text, coords, self.text_type, 0.8, self.bg_color, 3, self.line_type
-        )
-        cv2.putText(
-            frame, text, coords, self.text_type, 0.8, self.color, 1, self.line_type
-        )
-
-    def rectangle(
-        self, frame: np.ndarray, p1: Tuple[float], p2: Tuple[float], id: int
-    ) -> None:
-        """
-        フレームに矩形を描画する。
-
-        Args:
-            frame (np.ndarray): 描画対象の画像フレーム。
-            p1 (Tuple[float]): 矩形の開始座標。
-            p2 (Tuple[float]): 矩形の終了座標。
-            id (int): オブジェクトのID。
-
-        """
-        cv2.rectangle(frame, p1, p2, (0, 0, 0), 4)
-        cv2.rectangle(frame, p1, p2, idColors[id], 2)
-
-
-class HostSync(object):
-    """各フレームのメッセージを同期するクラス。"""
-
-    def __init__(self, sync_size: int = 4):
-        """HostSyncクラスの初期化メソッド。
-
-        Args:
-            sync_size (int, optional): 同期するメッセージの数。デフォルトは4。
-
-        """
-        self.dict = {}
-        self.head_seq = 0
-        self.sync_size = sync_size
-
-    def add_msg(self, name: str, msg: Any, seq: Optional[str] = None) -> None:
-        """メッセージをDictに追加するメソッド。
-
-        Args:
-            name (str): メッセージの名前。
-            msg (Any): 追加するメッセージ。
-            seq (str, optional): メッセージのシーケンス番号。デフォルトはNone。
-
-        """
-        if seq is None:
-            seq = str(msg.getSequenceNum())
-        if seq not in self.dict:
-            self.dict[seq] = {}
-        self.dict[seq][name] = msg
-
-    def get_msgs(self) -> Any:
-        """同期されたメッセージを取得するメソッド。
-
-        Returns:
-            Any: 同期されたメッセージ。
-
-        """
-        remove = []
-        for name in self.dict:
-            remove.append(name)
-            if len(self.dict[name]) == self.sync_size:
-                ret = self.dict[name]
-                for rm in remove:
-                    del self.dict[rm]
-                return ret
-        return None
 
 
 class OakdSpatialYolo(object):
@@ -497,7 +404,8 @@ class OakdSpatialYolo(object):
                 label = self.labels[detection.label]
             except BaseException:
                 label = detection.label
-            self.text.rectangle(frame, (x1, y1), (x2, y2), detection.label)
+                print
+            self.text.rectangle(frame, (x1, y1), (x2, y2), idColors[detection.label])
             if disp_info:
                 self.text.put_text(frame, str(label), (x1 + 10, y1 + 20))
                 self.text.put_text(
