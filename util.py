@@ -7,6 +7,8 @@ import cv2
 import numpy as np
 import requests
 from tqdm import tqdm
+from typing import List
+import time
 
 
 def download_file(path: str, link: str) -> None:
@@ -140,3 +142,27 @@ class HostSync(object):
                     del self.dict[rm]
                 return ret
         return None
+
+class OrbitData(object):
+    def __init__(self, name: str, id: int):
+        self.name: str = name
+        self.id: int = id
+        self.pos_log: List[Tuple[float, float, float, float]] = []
+        self.tmp_pos_log: List[Tuple[float, float, float, float]] = []
+
+
+class OrbitDataList(object):
+    def __init__(self, labels: List[str], roi_palette: RoiPalette, log_path: str):
+        self.start_time = time.time()
+        self.data: List[OrbitData] = []
+        self.labels: List[str] = labels
+        self.roi_palette = roi_palette
+        current_time = datetime.now()
+        self.file_name = (
+            log_path + f"/data_{current_time.strftime('%Y%m%d_%H%M%S')}.csv"
+        )
+
+    def get_label(self, id: int) -> str:
+        if id < len(self.labels):
+            return self.labels[id]
+        else:
