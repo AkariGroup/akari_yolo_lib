@@ -9,6 +9,8 @@ import requests
 from tqdm import tqdm
 from typing import List
 import time
+from dataclasses import dataclass
+from datetime import datetime
 
 
 def download_file(path: str, link: str) -> None:
@@ -143,26 +145,57 @@ class HostSync(object):
                 return ret
         return None
 
+
+@dataclass
+class PosLog:
+    time: int
+    x: float
+    y: float
+    z: float
+
+
 class OrbitData(object):
-    def __init__(self, name: str, id: int):
+    def __init__(self, name: str, id: int, pos_log: PosLog):
         self.name: str = name
         self.id: int = id
-        self.pos_log: List[Tuple[float, float, float, float]] = []
-        self.tmp_pos_log: List[Tuple[float, float, float, float]] = []
+        self.pos_log: List[PosLog] = []
+        self.tmp_pos_log: List[PosLog] = [pos_log]
 
 
 class OrbitDataList(object):
-    def __init__(self, labels: List[str], roi_palette: RoiPalette, log_path: str):
+    def __init__(self, labels: List[str], log_path: str):
+        self.LOGGING_INTEREVAL = 0.5
         self.start_time = time.time()
+        self.last_update_time = 0.0
         self.data: List[OrbitData] = []
         self.labels: List[str] = labels
-        self.roi_palette = roi_palette
         current_time = datetime.now()
         self.file_name = (
             log_path + f"/data_{current_time.strftime('%Y%m%d_%H%M%S')}.csv"
         )
 
-    def get_label(self, id: int) -> str:
-        if id < len(self.labels):
-            return self.labels[id]
-        else:
+    def get_cur_time(self) -> float:
+        return time.time - self.start_time()
+
+    def add_new_data(self, tracklet: Any):
+        pos_data = PosLog(time=self.get_cur_time(), x=tracklet.x, y=tracklet.y, z=tracklet.z)
+        self.data.append(OrbitData(name=self.labels[tracklet.label], id=tracklet.id, pos_log=pos_data))
+
+    def add_track_data(self, tracklet: Any, pos_list: List[PosLog]):
+        pos_data = PosLog(time=self.get_cur_time(), x=tracklet.x, y=tracklet.y, z=tracklet.z)
+        pos_list.append(pos_data)
+
+    def add_orbit_data(self, tracklets: List[Any]) -> None:
+        for tracklet in tracklets:
+            new_data = True
+            for data in self.data:
+                if tracklet.id == data.id:
+                    self.add_track_data(tracklet, data.tmp_pos_log)
+                    new_data = False
+            if new_data:
+                self.add_new_data(tracklet)
+
+    def save_orbit_data(self) -> None:
+        cur_time = self.get_cur_time
+        if self.get_cur_time - self.last_update_time > self.LOGGING_INTEREVAL:
+            for data in self.data:
