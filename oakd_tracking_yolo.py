@@ -103,7 +103,7 @@ class OakdTrackingYolo(object):
         self.show_orbit = show_orbit
         self.MAX_Z = 15000
         if self.show_orbit:
-            self.orbit_data_list = OrbitDataList()
+            self.orbit_data_list = OrbitDataList(labels=self.labels)
         self._stack = contextlib.ExitStack()
         self._pipeline = self._create_pipeline()
         self._device = self._stack.enter_context(dai.Device(self._pipeline))
@@ -569,10 +569,30 @@ class OakdTrackingYolo(object):
         return frame
 
     def pos_to_point_x(self, frame_width: int, pos_x: float) -> int:
+        """
+        3次元位置をbird frame上のx座標に変換する
+
+        Args:
+            frame_width (int): bird frameの幅
+            pos_x (float): 3次元位置のx
+
+        Returns:
+            int: bird frame上のx座標
+        """
         max_x = self.MAX_Z / 2
         return int(pos_x / max_x * frame_width + frame_width / 2)  # mm
 
     def pos_to_point_y(self, frame_height: int, pos_z: float) -> int:
+        """
+        3次元位置をbird frame上のy座標に変換する
+
+        Args:
+            frame_height (int): bird frameの高さ
+            pos_z (float): 3次元位置のz
+
+        Returns:
+            int: bird frame上のy座標
+        """
         return frame_height - int(pos_z / (self.MAX_Z - 10000) * frame_height) - 20
 
     def draw_bird_frame(self, tracklets: List[Any], show_labels: bool = False) -> None:

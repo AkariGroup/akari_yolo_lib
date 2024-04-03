@@ -163,16 +163,17 @@ class OrbitData(object):
 
 
 class OrbitDataList(object):
-    def __init__(self, labels: List[str], log_path: str):
+    def __init__(self, labels: List[str], log_path: Optional[str]=None):
         self.LOGGING_INTEREVAL = 0.5
         self.start_time = time.time()
         self.last_update_time = 0.0
         self.data: List[OrbitData] = []
         self.labels: List[str] = labels
-        current_time = datetime.now()
-        self.file_name = (
-            log_path + f"/data_{current_time.strftime('%Y%m%d_%H%M%S')}.csv"
-        )
+        if log_path is not None:
+            current_time = datetime.now()
+            self.file_name = (
+                akalog_path + f"/data_{current_time.strftime('%Y%m%d_%H%M%S')}.csv"
+            )
 
     def get_cur_time(self) -> float:
         return time.time - self.start_time()
