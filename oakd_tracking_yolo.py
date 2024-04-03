@@ -14,10 +14,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-from .util import HostSync, TextHelper
+from .util import HostSync, TextHelper, OrbitDataList
 
 DISPLAY_WINDOW_SIZE_RATE = 2.0
-MAX_Z = 15000
 idColors = np.random.random(size=(256, 3)) * 256
 
 
@@ -35,6 +34,7 @@ class OakdTrackingYolo(object):
         track_targets: Optional[List[Union[int, str]]] = None,
         show_bird_frame: bool = True,
         show_spatial_frame: bool = False,
+        show_orbit: bool = False,
     ) -> None:
         """クラスの初期化メソッド。
 
@@ -48,6 +48,7 @@ class OakdTrackingYolo(object):
             track_targets (Optional[List[Union[int, str]]], optional): トラッキング対象のラベルリスト。デフォルトはNone。
             show_bird_frame (bool, optional): 俯瞰フレームを表示するかどうか。デフォルトはTrue。
             show_spatial_frame (bool, optional): 3次元フレームを表示するかどうか。デフォルトはFalse。
+            show_orbit (bool, optional): 3次元軌道を表示するかどうか。デフォルトはFalse。
 
         """
         if not Path(config_path).exists():
@@ -99,6 +100,10 @@ class OakdTrackingYolo(object):
         self.robot_coordinate = robot_coordinate
         self.show_bird_frame = show_bird_frame
         self.show_spatial_frame = show_spatial_frame
+        self.show_orbit = show_orbit
+        self.MAX_Z = 15000
+        if self.show_orbit:
+            self.orbit_data_list = OrbitDataList()
         self._stack = contextlib.ExitStack()
         self._pipeline = self._create_pipeline()
         self._device = self._stack.enter_context(dai.Device(self._pipeline))
@@ -423,6 +428,8 @@ class OakdTrackingYolo(object):
                     tracklet.spatialCoordinates.x = converted_pos[0][0]
                     tracklet.spatialCoordinates.y = converted_pos[1][0]
                     tracklet.spatialCoordinates.z = converted_pos[2][0]
+            if self.show_orbit:
+                self.orbit_data_list.add_orbit_data(tracklets)
         return frame, detections, tracklets
 
     def get_raw_frame(self) -> np.ndarray:
@@ -561,6 +568,13 @@ class OakdTrackingYolo(object):
         cv2.fillPoly(frame, [fov_cnt], color=(70, 70, 70))
         return frame
 
+    def pos_to_point_x(self, frame_width: int, pos_x: float) -> int:
+        max_x = self.MAX_Z / 2
+        return int(pos_x / max_x * frame_width + frame_width / 2)  # mm
+
+    def pos_to_point_y(self, frame_height: int, pos_z: float) -> int:
+        return frame_height - int(pos_z / (self.MAX_Z - 10000) * frame_height) - 20
+
     def draw_bird_frame(self, tracklets: List[Any], show_labels: bool = False) -> None:
         """
         俯瞰フレームに検出結果を描画する。
@@ -571,42 +585,72 @@ class OakdTrackingYolo(object):
 
         """
         birds = self.bird_eye_frame.copy()
-        global MAX_Z
-        max_x = MAX_Z / 2  # mm
         if tracklets is not None:
             for i in range(0, len(tracklets)):
                 if tracklets[i].status.name == "TRACKED":
-                    pointY = (
-                        birds.shape[0]
-                        - int(
-                            tracklets[i].spatialCoordinates.z
-                            / (MAX_Z - 10000)
-                            * birds.shape[0]
-                        )
-                        - 20
+                    point_y = self.pos_to_point_y(
+                        birds.shape[0], tracklets[i].spatialCoordinates.z
                     )
-                    pointX = int(
-                        tracklets[i].spatialCoordinates.x / max_x * birds.shape[1]
-                        + birds.shape[1] / 2
+                    point_x = self.pos_to_point_x(
+                        birds.shape[1], tracklets[i].spatialCoordinates.x
                     )
                     if show_labels:
                         cv2.putText(
                             birds,
                             self.labels[tracklets[i].label],
-                            (pointX - 30, pointY + 5),
+                            (point_x - 30, point_y + 5),
                             cv2.FONT_HERSHEY_TRIPLEX,
                             0.5,
                             (0, 255, 0),
                         )
                     cv2.circle(
                         birds,
-                        (pointX, pointY),
+                        (point_x, point_y),
                         2,
                         idColors[tracklets[i].id],
                         thickness=5,
                         lineType=8,
                         shift=0,
                     )
+                    if self.show_orbit:
+                        orbit = self.orbit_data_list.get_orbit_from_id(tracklets[i].id)
+                        if orbit is not None:
+                            prev_point: Optional[Tuple[int, int]] = None
+                            for pos in orbit.pos_log:
+                                cur_point = (
+                                    self.pos_to_point_x(birds.shape[1], pos.x),
+                                    self.pos_to_point_y(birds.shape[0], pos.z),
+                                )
+                                cv2.circle(
+                                    birds,
+                                    cur_point,
+                                    2,
+                                    idColors[tracklets[i].id],
+                                    thickness=5,
+                                    lineType=8,
+                                    shift=0,
+                                )
+                                if prev_point is not None:
+                                    cv2.line(
+                                        birds,
+                                        prev_point,
+                                        cur_point,
+                                        idColors[tracklets[i].id],
+                                        2,
+                                    )
+                                prev_point = (
+                                    self.pos_to_point_x(birds.shape[1], pos.x),
+                                    self.pos_to_point_y(birds.shape[0], pos.z),
+                                )
+                            if prev_point is not None:
+                                cv2.line(
+                                    birds,
+                                    prev_point,
+                                    (point_x, point_y),
+                                    idColors[tracklets[i].id],
+                                    2,
+                                )
+
         cv2.imshow("birds", birds)
 
     def set_spatial_frame_range(self, range: float) -> None:

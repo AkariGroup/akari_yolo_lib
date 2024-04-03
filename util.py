@@ -177,6 +177,12 @@ class OrbitDataList(object):
     def get_cur_time(self) -> float:
         return time.time - self.start_time()
 
+    def get_orbit_from_id(self, id: int) -> OrbitData:
+        for data in self.data:
+            if data.id == id:
+                return data
+        return None
+
     def add_new_data(self, tracklet: Any):
         pos_data = PosLog(time=self.get_cur_time(), x=tracklet.x, y=tracklet.y, z=tracklet.z)
         self.data.append(OrbitData(name=self.labels[tracklet.label], id=tracklet.id, pos_log=pos_data))
@@ -186,6 +192,8 @@ class OrbitDataList(object):
         pos_list.append(pos_data)
 
     def add_orbit_data(self, tracklets: List[Any]) -> None:
+        if tracklets is None:
+            return
         for tracklet in tracklets:
             new_data = True
             for data in self.data:
@@ -195,13 +203,49 @@ class OrbitDataList(object):
             if new_data:
                 self.add_new_data(tracklet)
 
-    def save_orbit_data(self) -> None:
-        cur_time = self.get_cur_time
-        if self.get_cur_time - self.last_update_time > self.LOGGING_INTEREVAL:
-            for data in self.data:
+    def weighted_average_position(pos_logs: List[PosLog], target_time: float) -> PosLog:
+        """
+        指定された時間での位置を、重み付け平均から推測する。
 
-    def fix_pos_log(self) -> bool:
+        Args:
+            pos_logs (List[PosLog]): 時間と位置のログのリスト。
+            target_time (float): 推測したい時間。
+
+        Returns:
+            PosLog: 推測された位置。
+        """
+        total_weight = 0.0
+        weighted_sum_x = 0.0
+        weighted_sum_y = 0.0
+        weighted_sum_z = 0.0
+        for log in pos_logs:
+            # 時間差に基づいた重みを計算（時間差が小さいほど重みが大きくなる）
+            weight = 1 / (abs(log.time - target_time) + 1e-9)  # ゼロ除算を避けるための微小値
+            total_weight += weight
+            weighted_sum_x += log.x * weight
+            weighted_sum_y += log.y * weight
+            weighted_sum_z += log.z * weight
+        # 重み付け平均を計算
+        avg_x = weighted_sum_x / total_weight
+        avg_y = weighted_sum_y / total_weight
+        avg_z = weighted_sum_z / total_weight
+
+        return PosLog(time=target_time, x=avg_x, y=avg_y, z=avg_z)
+
+    def fix_pos_log(self) -> None:
         cur_time = self.get_cur_time()
-        if cur_time - self.last_update_time < self.LOGGING_INTEREVAL:
-            return False
-        for data in self.data:
+        while True:
+            next_time = self.last_update_time + self.LOGGING_INTEREVAL * 3/2
+            if cur_time - next_time < 0:
+                break
+            for data in self.data:
+                while True:
+                    tmp_list: List[PosLog]=[]
+                    if data.tmp_pos_log[0].time < next_time:
+                        tmp_list.append(data.tmp_pos_log.pop(0))
+                    else:
+                        break
+                if tmp_list is not None:
+                    data.pos_log.append(self.weighted_average_position(tmp_list, self.last_update_time + self.LOGGING_INTEREVAL))
+            self.last_update_time += self.LOGGING_INTEREVAL
+
