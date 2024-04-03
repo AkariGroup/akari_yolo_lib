@@ -199,3 +199,9 @@ class OrbitDataList(object):
         cur_time = self.get_cur_time
         if self.get_cur_time - self.last_update_time > self.LOGGING_INTEREVAL:
             for data in self.data:
+
+    def fix_pos_log(self) -> bool:
+        cur_time = self.get_cur_time()
+        if cur_time - self.last_update_time < self.LOGGING_INTEREVAL:
+            return False
+        for data in self.data:
