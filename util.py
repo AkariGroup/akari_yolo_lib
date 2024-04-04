@@ -163,7 +163,7 @@ class OrbitData(object):
 
 
 class OrbitDataList(object):
-    def __init__(self, labels: List[str], log_path: Optional[str]=None):
+    def __init__(self, labels: List[str], log_path: Optional[str] = None):
         self.LOGGING_INTEREVAL = 0.5
         self.start_time = time.time()
         self.last_update_time = 0.0
@@ -172,11 +172,11 @@ class OrbitDataList(object):
         if log_path is not None:
             current_time = datetime.now()
             self.file_name = (
-                akalog_path + f"/data_{current_time.strftime('%Y%m%d_%H%M%S')}.csv"
+                log_path + f"/data_{current_time.strftime('%Y%m%d_%H%M%S')}.csv"
             )
 
     def get_cur_time(self) -> float:
-        return time.time - self.start_time()
+        return time.time() - self.start_time
 
     def get_orbit_from_id(self, id: int) -> OrbitData:
         for data in self.data:
@@ -185,11 +185,25 @@ class OrbitDataList(object):
         return None
 
     def add_new_data(self, tracklet: Any):
-        pos_data = PosLog(time=self.get_cur_time(), x=tracklet.x, y=tracklet.y, z=tracklet.z)
-        self.data.append(OrbitData(name=self.labels[tracklet.label], id=tracklet.id, pos_log=pos_data))
+        pos_data = PosLog(
+            time=self.get_cur_time(),
+            x=tracklet.spatialCoordinates.x,
+            y=tracklet.spatialCoordinates.y,
+            z=tracklet.spatialCoordinates.z,
+        )
+        self.data.append(
+            OrbitData(
+                name=self.labels[tracklet.label], id=tracklet.id, pos_log=pos_data
+            )
+        )
 
     def add_track_data(self, tracklet: Any, pos_list: List[PosLog]):
-        pos_data = PosLog(time=self.get_cur_time(), x=tracklet.x, y=tracklet.y, z=tracklet.z)
+        pos_data = PosLog(
+            time=self.get_cur_time(),
+            x=tracklet.spatialCoordinates.x,
+            y=tracklet.spatialCoordinates.y,
+            z=tracklet.spatialCoordinates.z,
+        )
         pos_list.append(pos_data)
 
     def add_orbit_data(self, tracklets: List[Any]) -> None:
@@ -204,7 +218,9 @@ class OrbitDataList(object):
             if new_data:
                 self.add_new_data(tracklet)
 
-    def weighted_average_position(pos_logs: List[PosLog], target_time: float) -> PosLog:
+    def weighted_average_position(
+        self, pos_logs: List[PosLog], target_time: float
+    ) -> PosLog:
         """
         指定された時間での位置を、重み付け平均から推測する。
 
@@ -221,7 +237,9 @@ class OrbitDataList(object):
         weighted_sum_z = 0.0
         for log in pos_logs:
             # 時間差に基づいた重みを計算（時間差が小さいほど重みが大きくなる）
-            weight = 1 / (abs(log.time - target_time) + 1e-9)  # ゼロ除算を避けるための微小値
+            weight = 1 / (
+                abs(log.time - target_time) + 1e-9
+            )  # ゼロ除算を避けるための微小値
             total_weight += weight
             weighted_sum_x += log.x * weight
             weighted_sum_y += log.y * weight
@@ -236,17 +254,23 @@ class OrbitDataList(object):
     def fix_pos_log(self) -> None:
         cur_time = self.get_cur_time()
         while True:
-            next_time = self.last_update_time + self.LOGGING_INTEREVAL * 3/2
+            next_time = self.last_update_time + self.LOGGING_INTEREVAL * 3 / 2
             if cur_time - next_time < 0:
                 break
             for data in self.data:
+                tmp_list: List[PosLog] = []
                 while True:
-                    tmp_list: List[PosLog]=[]
-                    if data.tmp_pos_log[0].time < next_time:
-                        tmp_list.append(data.tmp_pos_log.pop(0))
+                    if len(data.tmp_pos_log) > 0:
+                        if data.tmp_pos_log[0].time < next_time:
+                            tmp_list.append(data.tmp_pos_log.pop(0))
+                        else:
+                            break
                     else:
                         break
-                if tmp_list is not None:
-                    data.pos_log.append(self.weighted_average_position(tmp_list, self.last_update_time + self.LOGGING_INTEREVAL))
+                if len(tmp_list) > 0:
+                    data.pos_log.append(
+                        self.weighted_average_position(
+                            tmp_list, self.last_update_time + self.LOGGING_INTEREVAL
+                        )
+                    )
             self.last_update_time += self.LOGGING_INTEREVAL
-

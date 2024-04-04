@@ -430,6 +430,7 @@ class OakdTrackingYolo(object):
                     tracklet.spatialCoordinates.z = converted_pos[2][0]
             if self.show_orbit:
                 self.orbit_data_list.add_orbit_data(tracklets)
+                self.orbit_data_list.fix_pos_log()
         return frame, detections, tracklets
 
     def get_raw_frame(self) -> np.ndarray:
@@ -646,7 +647,7 @@ class OakdTrackingYolo(object):
                                     cur_point,
                                     2,
                                     idColors[tracklets[i].id],
-                                    thickness=5,
+                                    thickness=2,
                                     lineType=8,
                                     shift=0,
                                 )
@@ -656,7 +657,7 @@ class OakdTrackingYolo(object):
                                         prev_point,
                                         cur_point,
                                         idColors[tracklets[i].id],
-                                        2,
+                                        thickness=1,
                                     )
                                 prev_point = (
                                     self.pos_to_point_x(birds.shape[1], pos.x),
