@@ -4,10 +4,11 @@ import os
 from typing import Any, Optional, Tuple
 
 import cv2
+import json
 import numpy as np
 import requests
 from tqdm import tqdm
-from typing import List
+from typing import TypedDict, List
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -154,6 +155,13 @@ class PosLog:
     z: float
 
 
+class LogJson(TypedDict):
+    id: int
+    name: str
+    time: float
+    pos: List[Tuple[float, float, float]]
+
+
 class OrbitData(object):
     def __init__(self, name: str, id: int, pos_log: PosLog):
         self.name: str = name
@@ -170,10 +178,22 @@ class OrbitDataList(object):
         self.data: List[OrbitData] = []
         self.labels: List[str] = labels
         if log_path is not None:
+            if not os.path.exists(log_path):
+                os.makedirs(log_path)
             current_time = datetime.now()
             self.file_name = (
-                log_path + f"/data_{current_time.strftime('%Y%m%d_%H%M%S')}.csv"
+                log_path + f"/data_{current_time.strftime('%Y%m%d_%H%M%S')}.json"
             )
+            init_json = {}
+            init_json["start_time"] = f"{current_time.strftime('%Y%m%d_%H%M%S')}"
+            init_json["interval"] = self.LOGGING_INTEREVAL
+            init_json["logs"] = []
+            with open(self.file_name, mode="wt", encoding="utf-8") as f:
+                json.dump(init_json, f, ensure_ascii=False, indent=2)
+
+    def __del__(self):
+        for data in self.data:
+            self.save_pos_log(data)
 
     def get_cur_time(self) -> float:
         return time.time() - self.start_time
@@ -206,7 +226,7 @@ class OrbitDataList(object):
         )
         pos_list.append(pos_data)
 
-    def add_orbit_data(self, tracklets: List[Any]) -> None:
+    def update_orbit_data(self, tracklets: List[Any]) -> None:
         if tracklets is None:
             return
         for tracklet in tracklets:
@@ -217,6 +237,8 @@ class OrbitDataList(object):
                     new_data = False
             if new_data:
                 self.add_new_data(tracklet)
+        self.fix_pos_log()
+        self.remove_old_data(tracklets)
 
     def weighted_average_position(
         self, pos_logs: List[PosLog], target_time: float
@@ -274,3 +296,40 @@ class OrbitDataList(object):
                         )
                     )
             self.last_update_time += self.LOGGING_INTEREVAL
+
+    def remove_old_data(self, tracklets: List[Any]) -> None:
+        new_data = []
+        for data in self.data:
+            is_tracking = False
+            for tracklet in tracklets:
+                if tracklet.id == data.id:
+                    is_tracking = True
+                    break
+            if not is_tracking:
+                if self.file_name is not None:
+                    self.save_pos_log(data)
+            else:
+                new_data.append(data)
+        self.data = new_data
+
+    def save_pos_log(self, data: OrbitData) -> None:
+        if len(data.pos_log) == 0:
+            return
+        new_data: LogJson = {
+            "id": data.id,
+            "name": data.name,
+            "time": data.pos_log[0].time,
+            "pos": [
+                (
+                    round(pos.x / 1000.0, 3),
+                    round(pos.y / 1000.0, 3),
+                    round(pos.z / 1000.0, 3),
+                )
+                for pos in data.pos_log
+            ],
+        }
+        json_open = open(self.file_name, "r")
+        log_file = json.load(json_open)
+        log_file["logs"].append(new_data)
+        with open(self.file_name, mode="wt", encoding="utf-8") as f:
+            json.dump(log_file, f, ensure_ascii=False, indent=2)

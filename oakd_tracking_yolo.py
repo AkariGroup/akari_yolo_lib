@@ -35,6 +35,7 @@ class OakdTrackingYolo(object):
         show_bird_frame: bool = True,
         show_spatial_frame: bool = False,
         show_orbit: bool = False,
+        log_path: Optional[str] = None
     ) -> None:
         """クラスの初期化メソッド。
 
@@ -49,6 +50,7 @@ class OakdTrackingYolo(object):
             show_bird_frame (bool, optional): 俯瞰フレームを表示するかどうか。デフォルトはTrue。
             show_spatial_frame (bool, optional): 3次元フレームを表示するかどうか。デフォルトはFalse。
             show_orbit (bool, optional): 3次元軌道を表示するかどうか。デフォルトはFalse。
+            log_path (Optional[str], optional): 物体の軌道履歴を保存するパス。show_orbitがTrueの時のみ有効。
 
         """
         if not Path(config_path).exists():
@@ -103,7 +105,7 @@ class OakdTrackingYolo(object):
         self.show_orbit = show_orbit
         self.MAX_Z = 15000
         if self.show_orbit:
-            self.orbit_data_list = OrbitDataList(labels=self.labels)
+            self.orbit_data_list = OrbitDataList(labels=self.labels,log_path=log_path)
         self._stack = contextlib.ExitStack()
         self._pipeline = self._create_pipeline()
         self._device = self._stack.enter_context(dai.Device(self._pipeline))
@@ -429,8 +431,7 @@ class OakdTrackingYolo(object):
                     tracklet.spatialCoordinates.y = converted_pos[1][0]
                     tracklet.spatialCoordinates.z = converted_pos[2][0]
             if self.show_orbit:
-                self.orbit_data_list.add_orbit_data(tracklets)
-                self.orbit_data_list.fix_pos_log()
+                self.orbit_data_list.update_orbit_data(tracklets)
         return frame, detections, tracklets
 
     def get_raw_frame(self) -> np.ndarray:
