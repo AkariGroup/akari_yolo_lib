@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 
+import os
 import contextlib
 import json
 import math
 import time
 from pathlib import Path
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, TypedDict, Union
 
+from dataclasses import dataclass
+from datetime import datetime
 import blobconverter
 import cv2
 import depthai as dai
@@ -14,7 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-from .util import HostSync, TextHelper, OrbitDataList
+from .util import HostSync, TextHelper
 
 DISPLAY_WINDOW_SIZE_RATE = 2.0
 idColors = np.random.random(size=(256, 3)) * 256
@@ -28,14 +31,14 @@ class OakdTrackingYolo(object):
         config_path: str,
         model_path: str,
         fps: int,
-        fov: float,
+        fov: float = 73.0,
         cam_debug: bool = False,
         robot_coordinate: bool = False,
         track_targets: Optional[List[Union[int, str]]] = None,
         show_bird_frame: bool = True,
         show_spatial_frame: bool = False,
         show_orbit: bool = False,
-        log_path: Optional[str] = None
+        log_path: Optional[str] = None,
     ) -> None:
         """クラスの初期化メソッド。
 
@@ -43,7 +46,7 @@ class OakdTrackingYolo(object):
             config_path (str): YOLOモデルの設定ファイルのパス。
             model_path (str): YOLOモデルファイルのパス。
             fps (int): カメラのフレームレート。
-            fov (float): カメラの視野角 (degree)。
+            fov (float): カメラの視野角 (degree)。defaultはOAK-D LiteのHFOVの73.0[deg]
             cam_debug (bool, optional): カメラのデバッグ用ウィンドウを表示するかどうか。デフォルトはFalse。
             robot_coordinate (bool, optional): ロボットのヘッド向きを使って物体の位置を変換するかどうか。デフォルトはFalse。
             track_targets (Optional[List[Union[int, str]]], optional): トラッキング対象のラベルリスト。デフォルトはNone。
@@ -103,9 +106,9 @@ class OakdTrackingYolo(object):
         self.show_bird_frame = show_bird_frame
         self.show_spatial_frame = show_spatial_frame
         self.show_orbit = show_orbit
-        self.MAX_Z = 15000
+        self.max_z = 15000  # [m]
         if self.show_orbit:
-            self.orbit_data_list = OrbitDataList(labels=self.labels,log_path=log_path)
+            self.orbit_data_list = OrbitDataList(labels=self.labels, log_path=log_path)
         self._stack = contextlib.ExitStack()
         self._pipeline = self._create_pipeline()
         self._device = self._stack.enter_context(dai.Device(self._pipeline))
@@ -570,6 +573,13 @@ class OakdTrackingYolo(object):
         cv2.fillPoly(frame, [fov_cnt], color=(70, 70, 70))
         return frame
 
+    def update_bird_frame_distance(self, distance: int) -> None:
+        """俯瞰フレームの距離方向の表示最大値を変更する。
+        Args:
+            distance (int): 最大距離[mm]。
+        """
+        self.max_z = distance
+
     def pos_to_point_x(self, frame_width: int, pos_x: float) -> int:
         """
         3次元位置をbird frame上のx座標に変換する
@@ -581,8 +591,8 @@ class OakdTrackingYolo(object):
         Returns:
             int: bird frame上のx座標
         """
-        max_x = self.MAX_Z / 2
-        return int(pos_x / max_x * frame_width + frame_width / 2)  # mm
+        max_x = self.max_z / 2
+        return int(pos_x / max_x * frame_width + frame_width / 2)
 
     def pos_to_point_y(self, frame_height: int, pos_z: float) -> int:
         """
@@ -595,7 +605,7 @@ class OakdTrackingYolo(object):
         Returns:
             int: bird frame上のy座標
         """
-        return frame_height - int(pos_z / (self.MAX_Z - 10000) * frame_height) - 20
+        return frame_height - int(pos_z / self.max_z * frame_height) - 20
 
     def draw_bird_frame(self, tracklets: List[Any], show_labels: bool = False) -> None:
         """
@@ -808,3 +818,253 @@ class OakdTrackingYolo(object):
                     self.ax.scatter(x, y, z, color=color)
         plt.pause(0.001)
         plt.draw()
+
+
+@dataclass
+class PosLog:
+    """保存する位置情報"""
+
+    time: int
+    x: float
+    y: float
+    z: float
+
+
+class LogJson(TypedDict):
+    """保存するJSONの型"""
+
+    id: int
+    name: str
+    time: float
+    pos: List[Tuple[float, float, float]]
+
+
+class OrbitData(object):
+    """trackletsの位置情報を保存する形式を定義したクラス"""
+
+    def __init__(self, name: str, id: int, pos_log: PosLog):
+        self.name: str = name
+        self.id: int = id
+        self.pos_log: List[PosLog] = []
+        self.tmp_pos_log: List[PosLog] = [pos_log]
+
+
+class OrbitDataList(object):
+    """trackletsの移動履歴を保存するためのクラス"""
+
+    def __init__(self, labels: List[str], log_path: Optional[str] = None):
+        """クラスの初期化メソッド。
+
+        Args:
+            labels (List[str]): trackletsのlabel
+            log_path (Optional[str]): logを保存するディレクトリパス
+        """
+        self.LOGGING_INTEREVAL = 0.5
+        # LOGGING_INTEREVALの間にこの回数以上存在しなければ誤認識と判定
+        self.AVAILABLE_TIME_THRESHOLD = 3
+        self.start_time = time.time()
+        self.last_update_time = 0.0
+        self.data: List[OrbitData] = []
+        self.labels: List[str] = labels
+        if log_path is not None:
+            if not os.path.exists(log_path):
+                os.makedirs(log_path)
+            current_time = datetime.now()
+            self.file_name = (
+                log_path + f"/data_{current_time.strftime('%Y%m%d_%H%M%S')}.json"
+            )
+            init_json = {}
+            init_json["start_time"] = f"{current_time.strftime('%Y/%m/%d %H:%M:%S')}"
+            init_json["interval"] = self.LOGGING_INTEREVAL
+            init_json["logs"] = []
+            with open(self.file_name, mode="wt", encoding="utf-8") as f:
+                json.dump(init_json, f, ensure_ascii=False, indent=2)
+
+    def __del__(self):
+        """OrbitDataListオブジェクトが削除される際に呼び出されるデストラクタ。"""
+        for data in self.data:
+            self.save_pos_log(data)
+
+    def get_cur_time(self) -> float:
+        """現在の時間を取得する
+
+        Returns:
+            float: 現在の時間
+        """
+        return time.time() - self.start_time
+
+    def get_orbit_from_id(self, id: int) -> OrbitData:
+        """IDからOrbitDataを取得する
+
+        Args:
+            id (int): trackletのid
+
+        Returns:
+            OrbitData: IDに対応するOrbitData
+
+        """
+        for data in self.data:
+            if data.id == id:
+                return data
+        return None
+
+    def add_new_data(self, tracklet: Any) -> None:
+        """trackletから新しいidのOrbitDataを作成
+
+        Args:
+            tracklet (Any): 保存するtracklet
+
+        """
+        pos_data = PosLog(
+            time=self.get_cur_time(),
+            x=tracklet.spatialCoordinates.x,
+            y=tracklet.spatialCoordinates.y,
+            z=tracklet.spatialCoordinates.z,
+        )
+        self.data.append(
+            OrbitData(
+                name=self.labels[tracklet.label], id=tracklet.id, pos_log=pos_data
+            )
+        )
+
+    def add_track_data(self, tracklet: Any, pos_list: List[PosLog]) -> None:
+        """trackletの位置情報をpos_listに追加
+        Args:
+            tracklet (Any): 追加するtracklet
+            pos_list (List[PosLog]): 追加先のlist
+
+        """
+        pos_data = PosLog(
+            time=self.get_cur_time(),
+            x=tracklet.spatialCoordinates.x,
+            y=tracklet.spatialCoordinates.y,
+            z=tracklet.spatialCoordinates.z,
+        )
+        pos_list.append(pos_data)
+
+    def update_orbit_data(self, tracklets: List[Any]) -> None:
+        """trackletsの位置情報で軌道情報を更新
+
+        Args:
+            tracklets (List[Any]): tracklets
+
+        """
+        if tracklets is None:
+            return
+        for tracklet in tracklets:
+            if tracklet.status.name == "TRACKED":
+                new_data = True
+                for data in self.data:
+                    if tracklet.id == data.id:
+                        self.add_track_data(tracklet, data.tmp_pos_log)
+                        new_data = False
+                if new_data:
+                    self.add_new_data(tracklet)
+        self.fix_pos_log()
+        self.remove_old_data(tracklets)
+
+    def weighted_average_position(
+        self, pos_logs: List[PosLog], target_time: float
+    ) -> PosLog:
+        """
+        指定された時間での位置を、重み付け平均から推測する。
+
+        Args:
+            pos_logs (List[PosLog]): 時間と位置のログのリスト。
+            target_time (float): 推測したい時間。
+
+        Returns:
+            PosLog: 推測された位置。
+        """
+        total_weight = 0.0
+        weighted_sum_x = 0.0
+        weighted_sum_y = 0.0
+        weighted_sum_z = 0.0
+        for log in pos_logs:
+            # 時間差に基づいた重みを計算（時間差が小さいほど重みが大きくなる）
+            weight = 1 / (
+                abs(log.time - target_time) + 1e-9
+            )  # ゼロ除算を避けるための微小値
+            total_weight += weight
+            weighted_sum_x += log.x * weight
+            weighted_sum_y += log.y * weight
+            weighted_sum_z += log.z * weight
+        # 重み付け平均を計算
+        avg_x = weighted_sum_x / total_weight
+        avg_y = weighted_sum_y / total_weight
+        avg_z = weighted_sum_z / total_weight
+
+        return PosLog(time=target_time, x=avg_x, y=avg_y, z=avg_z)
+
+    def fix_pos_log(self) -> None:
+        """tmp_pos_logに保存された位置情報をLOGGING_INTEREVALで時間平均してpos_logに保存"""
+        cur_time = self.get_cur_time()
+        while True:
+            next_time = self.last_update_time + self.LOGGING_INTEREVAL * 3 / 2
+            if cur_time - next_time < 0:
+                break
+            for data in self.data:
+                tmp_list: List[PosLog] = []
+                while True:
+                    if len(data.tmp_pos_log) > 0:
+                        if data.tmp_pos_log[0].time < next_time:
+                            tmp_list.append(data.tmp_pos_log.pop(0))
+                        else:
+                            break
+                    else:
+                        break
+                if len(tmp_list) >= self.AVAILABLE_TIME_THRESHOLD:
+                    data.pos_log.append(
+                        self.weighted_average_position(
+                            tmp_list, self.last_update_time + self.LOGGING_INTEREVAL
+                        )
+                    )
+            self.last_update_time += self.LOGGING_INTEREVAL
+
+    def remove_old_data(self, tracklets: List[Any]) -> None:
+        """trackletsから消えたデータをpos_logから削除して保存
+        Args:
+            tracklets (List[Any]): tracklets
+
+        """
+        new_data = []
+        for data in self.data:
+            is_tracking = False
+            for tracklet in tracklets:
+                if tracklet.id == data.id:
+                    is_tracking = True
+                    break
+            if not is_tracking:
+                if self.file_name is not None:
+                    self.save_pos_log(data)
+            else:
+                new_data.append(data)
+        self.data = new_data
+
+    def save_pos_log(self, data: OrbitData) -> None:
+        """OrbitDataのpos_logをファイルに保存
+
+        Args:
+            data (OrbitData): 保存するOrbitData
+
+        """
+        if len(data.pos_log) == 0:
+            return
+        new_data: LogJson = {
+            "id": data.id,
+            "name": data.name,
+            "time": data.pos_log[0].time,
+            "pos": [
+                (
+                    round(pos.x / 1000.0, 3),
+                    round(pos.y / 1000.0, 3),
+                    round(pos.z / 1000.0, 3),
+                )
+                for pos in data.pos_log
+            ],
+        }
+        json_open = open(self.file_name, "r")
+        log_file = json.load(json_open)
+        log_file["logs"].append(new_data)
+        with open(self.file_name, mode="wt", encoding="utf-8") as f:
+            json.dump(log_file, f, ensure_ascii=False, indent=2)
