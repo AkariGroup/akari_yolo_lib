@@ -1,15 +1,15 @@
 #!/usr/bin/env python
 
-import os
 import contextlib
 import json
 import math
+import os
 import time
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, TypedDict, Union
 
-from dataclasses import dataclass
-from datetime import datetime
 import blobconverter
 import cv2
 import depthai as dai
@@ -982,9 +982,7 @@ class OrbitDataList(object):
         weighted_sum_z = 0.0
         for log in pos_logs:
             # 時間差に基づいた重みを計算（時間差が小さいほど重みが大きくなる）
-            weight = 1 / (
-                abs(log.time - target_time) + 1e-9
-            )  # ゼロ除算を避けるための微小値
+            weight = 1 / (abs(log.time - target_time) + 1e-9)  # ゼロ除算を避けるための微小値
             total_weight += weight
             weighted_sum_x += log.x * weight
             weighted_sum_y += log.y * weight
