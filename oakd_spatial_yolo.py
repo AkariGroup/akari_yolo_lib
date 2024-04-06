@@ -27,7 +27,7 @@ class OakdSpatialYolo(object):
         config_path: str,
         model_path: str,
         fps: int,
-        fov: float,
+        fov: float = 73.0,
         cam_debug: bool = False,
         robot_coordinate: bool = False,
     ) -> None:
@@ -37,7 +37,7 @@ class OakdSpatialYolo(object):
             config_path (str): YOLOモデルの設定ファイルのパス。
             model_path (str): YOLOモデルファイルのパス。
             fps (int): カメラのフレームレート。
-            fov (float): カメラの視野角 (degree)。
+            fov (float): カメラの視野角 (degree)。defaultはOAK-D LiteのHFOVの73.0[deg]。
             cam_debug (bool, optional): カメラのデバッグ用ウィンドウを表示するかどうか。デフォルトはFalse。
             robot_coordinate (bool, optional): ロボットのヘッド向きを使って物体の位置を変換するかどうか。デフォルトはFalse。
 
