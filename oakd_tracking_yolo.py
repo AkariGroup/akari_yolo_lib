@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import contextlib
+import copy
 import json
 import math
 import os
@@ -8,7 +9,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Optional, Tuple, TypedDict, Union
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
 
 import blobconverter
 import cv2
@@ -106,7 +107,7 @@ class OakdTrackingYolo(object):
         self.show_bird_frame = show_bird_frame
         self.show_spatial_frame = show_spatial_frame
         self.show_orbit = show_orbit
-        self.max_z = 15000  # [m]
+        self.max_z = 15000  # [mm]
         if self.show_orbit:
             self.orbit_data_list = OrbitDataList(labels=self.labels, log_path=log_path)
         self._stack = contextlib.ExitStack()
@@ -982,7 +983,9 @@ class OrbitDataList(object):
         weighted_sum_z = 0.0
         for log in pos_logs:
             # 時間差に基づいた重みを計算（時間差が小さいほど重みが大きくなる）
-            weight = 1 / (abs(log.time - target_time) + 1e-9)  # ゼロ除算を避けるための微小値
+            weight = 1 / (
+                abs(log.time - target_time) + 1e-9
+            )  # ゼロ除算を避けるための微小値
             total_weight += weight
             weighted_sum_x += log.x * weight
             weighted_sum_y += log.y * weight
@@ -1066,3 +1069,122 @@ class OrbitDataList(object):
         log_file["logs"].append(new_data)
         with open(self.file_name, mode="wt", encoding="utf-8") as f:
             json.dump(log_file, f, ensure_ascii=False, indent=2)
+
+
+class OrbitPlayer(OakdTrackingYolo):
+    def __init__(
+        self,
+        log_path: str,
+        speed: float = 1.0,
+        fov: float = 73.0,
+        max_z: float = 15000,
+    ) -> None:
+        self.log = None
+        try:
+            json_open = open(log_path, "r")
+            self.log = json.load(json_open)
+        except FileNotFoundError:
+            print(f"Error: The file {log_path} does not exist.")
+            return
+        self.fov = fov
+        self.speed = speed
+        self.max_z = max_z
+        self.interval = float(self.log["interval"])
+        self.end_time = self.get_end_time(self.log["logs"])
+        self.bird_eye_frame = self.create_bird_frame()
+
+    def get_end_time(self, logs: List[Any]) -> float:
+        end_time = 0
+        for data in logs:
+            cur_end_time = float(data["time"]) + self.interval * len(data["pos"])
+            if cur_end_time > end_time:
+                end_time = cur_end_time
+        return end_time
+
+    def get_cur_index(self, now: float, data: Dict[str, Any]) -> int:
+        spend_time = now - float(data["time"])
+        if spend_time < 0:
+            return -2
+        if spend_time >= self.interval * len(data["pos"]):
+            return -1
+        return int(spend_time / self.interval)
+
+    def play_log(self) -> None:
+        plotting_list = []
+        now = 0.0
+        while now <= self.end_time:
+            print(f"now: {now}")
+            # 記録開始時間に到達したらplotting_listに追加
+            for data in self.log["logs"]:
+                if data["time"] == now:
+                    plotting_list.append(copy.deepcopy(data))
+            updated_plotting_list = []
+            for plotting_data in plotting_list:
+                if self.get_cur_index(now, plotting_data) >= 0:
+                    updated_plotting_list.append(plotting_data)
+            plotting_list = copy.deepcopy(updated_plotting_list)
+            self.draw_bird_frame(now, plotting_list)
+            now += self.interval
+            time.sleep(self.interval / self.speed)
+
+    def draw_bird_frame(self, now: float, log_list: List[Any]) -> None:
+        """
+        俯瞰フレームにログを描画する。
+
+        Args:
+            datas (List[Any]): 描画中の軌道ログのリスト。
+
+        """
+        birds = self.bird_eye_frame.copy()
+        if log_list is not None:
+            print(len(log_list))
+            for data in log_list:
+                cur_index = self.get_cur_index(now, data)
+                point_y = self.pos_to_point_y(birds.shape[0], data["pos"][cur_index][2] * 1000)
+                point_x = self.pos_to_point_x(birds.shape[1], data["pos"][cur_index][0]* 1000)
+                cv2.circle(
+                    birds,
+                    (point_x, point_y),
+                    2,
+                    idColors[data["id"]],
+                    thickness=5,
+                    lineType=8,
+                    shift=0,
+                )
+                prev_point = None
+                for i in range(0, cur_index):
+                    cur_point = (
+                        self.pos_to_point_x(birds.shape[1], data["pos"][i][0]* 1000),
+                        self.pos_to_point_y(birds.shape[0], data["pos"][i][2]* 1000),
+                    )
+                    cv2.circle(
+                        birds,
+                        cur_point,
+                        2,
+                        idColors[data["id"]],
+                        thickness=2,
+                        lineType=8,
+                        shift=0,
+                    )
+                    if prev_point is not None:
+                        cv2.line(
+                            birds,
+                            prev_point,
+                            cur_point,
+                            idColors[data["id"]],
+                            thickness=1,
+                        )
+                    prev_point = (
+                        self.pos_to_point_x(birds.shape[1], data["pos"][i][0]* 1000),
+                        self.pos_to_point_y(birds.shape[0], data["pos"][i][2]* 1000),
+                    )
+                if prev_point is not None:
+                    cv2.line(
+                        birds,
+                        prev_point,
+                        (point_x, point_y),
+                        idColors[data["id"]],
+                        2,
+                    )
+        cv2.imshow("birds", birds)
+        cv2.waitKey(1)
