@@ -41,7 +41,7 @@ def download_file(path: str, link: str) -> None:
         progress.close()
         print(f"{path} download finished.")
     except Exception:
-        print(f"Download error")
+        print("Download error")
 
 
 class TextHelper(object):

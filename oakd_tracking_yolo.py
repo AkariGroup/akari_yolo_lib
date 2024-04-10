@@ -7,7 +7,7 @@ import math
 import os
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
 
@@ -844,6 +844,7 @@ class OrbitData(object):
     """trackletsの位置情報を保存する形式を定義したクラス"""
 
     def __init__(self, name: str, id: int, pos_log: PosLog):
+        """クラスの初期化メソッド。"""
         self.name: str = name
         self.id: int = id
         self.pos_log: List[PosLog] = []
@@ -967,8 +968,7 @@ class OrbitDataList(object):
     def weighted_average_position(
         self, pos_logs: List[PosLog], target_time: float
     ) -> PosLog:
-        """
-        指定された時間での位置を、重み付け平均から推測する。
+        """指定された時間での位置を、重み付け平均から推測する。
 
         Args:
             pos_logs (List[PosLog]): 時間と位置のログのリスト。
@@ -983,9 +983,7 @@ class OrbitDataList(object):
         weighted_sum_z = 0.0
         for log in pos_logs:
             # 時間差に基づいた重みを計算（時間差が小さいほど重みが大きくなる）
-            weight = 1 / (
-                abs(log.time - target_time) + 1e-9
-            )  # ゼロ除算を避けるための微小値
+            weight = 1 / (abs(log.time - target_time) + 1e-9)  # ゼロ除算を避けるための微小値
             total_weight += weight
             weighted_sum_x += log.x * weight
             weighted_sum_y += log.y * weight
@@ -1072,6 +1070,8 @@ class OrbitDataList(object):
 
 
 class OrbitPlayer(OakdTrackingYolo):
+    """軌道ログを再生するためのクラス"""
+
     def __init__(
         self,
         log_path: str,
@@ -1079,6 +1079,16 @@ class OrbitPlayer(OakdTrackingYolo):
         fov: float = 73.0,
         max_z: float = 15000,
     ) -> None:
+        """クラスの初期化メソッド。
+        Args:
+            log_path (str): ログファイルのパス
+            speed (float, optional): 再生速度 (1.0 が等速). デフォルトは 1.0.
+            fov (float, optional): 俯瞰マップ上に描画されるOAK-Dの視野角 (度). デフォルトは 73.0 度.
+            max_z (float, optional): 俯瞰マップの最大Z座標値. デフォルトは 15000.
+
+        Raises:
+            FileNotFoundError: ログファイルが存在しない場合に発生.
+        """
         self.log = None
         try:
             json_open = open(log_path, "r")
@@ -1092,8 +1102,18 @@ class OrbitPlayer(OakdTrackingYolo):
         self.interval = float(self.log["interval"])
         self.end_time = self.get_end_time(self.log["logs"])
         self.bird_eye_frame = self.create_bird_frame()
+        self.datetime = datetime.strptime(self.log["start_time"], "%Y/%m/%d %H:%M:%S")
 
     def get_end_time(self, logs: List[Any]) -> float:
+        """
+        ログファイル内のデータの終了時刻を取得する。
+
+        Args:
+            logs (List[Any]): 軌道の時系列データ
+
+        Returns:
+            float: ログデータの終了時刻 [s]
+        """
         end_time = 0
         for data in logs:
             cur_end_time = float(data["time"]) + self.interval * len(data["pos"])
@@ -1102,6 +1122,17 @@ class OrbitPlayer(OakdTrackingYolo):
         return end_time
 
     def get_cur_index(self, now: float, data: Dict[str, Any]) -> int:
+        """現在時刻からインデックス番号を取得する。
+
+        Args:
+            now (float): 現在の時刻 (秒単位)
+            data (Dict[str, Any]): 軌道の時系列データ
+
+        Returns:
+            int: データの現在インデックス。
+                -2 は開始時刻前、-1 は時刻が最終インデックスを超えている、
+                それ以外の正の整数はインデックスを表す。
+        """
         spend_time = now - float(data["time"])
         if spend_time < 0:
             return -2
@@ -1110,10 +1141,10 @@ class OrbitPlayer(OakdTrackingYolo):
         return int(spend_time / self.interval)
 
     def play_log(self) -> None:
+        """ログデータに基づいて、設定された時間間隔で軌跡を描画する。"""
         plotting_list = []
         now = 0.0
         while now <= self.end_time:
-            print(f"now: {now}")
             # 記録開始時間に到達したらplotting_listに追加
             for data in self.log["logs"]:
                 if data["time"] == now:
@@ -1125,23 +1156,34 @@ class OrbitPlayer(OakdTrackingYolo):
             plotting_list = copy.deepcopy(updated_plotting_list)
             self.draw_bird_frame(now, plotting_list)
             now += self.interval
+            self.datetime += timedelta(seconds=self.interval)
             time.sleep(self.interval / self.speed)
 
     def draw_bird_frame(self, now: float, log_list: List[Any]) -> None:
-        """
-        俯瞰フレームにログを描画する。
+        """俯瞰フレームにログを描画する。
 
         Args:
             datas (List[Any]): 描画中の軌道ログのリスト。
 
         """
         birds = self.bird_eye_frame.copy()
+        cv2.putText(
+            birds,
+            self.datetime.strftime("%Y/%m/%d %H:%M:%S.%f")[:-4],
+            (0, birds.shape[1] - 10),
+            cv2.FONT_HERSHEY_DUPLEX,
+            0.3,
+            (255, 255, 255),
+        )
         if log_list is not None:
-            print(len(log_list))
             for data in log_list:
                 cur_index = self.get_cur_index(now, data)
-                point_y = self.pos_to_point_y(birds.shape[0], data["pos"][cur_index][2] * 1000)
-                point_x = self.pos_to_point_x(birds.shape[1], data["pos"][cur_index][0]* 1000)
+                point_y = self.pos_to_point_y(
+                    birds.shape[0], data["pos"][cur_index][2] * 1000
+                )
+                point_x = self.pos_to_point_x(
+                    birds.shape[1], data["pos"][cur_index][0] * 1000
+                )
                 cv2.circle(
                     birds,
                     (point_x, point_y),
@@ -1151,11 +1193,19 @@ class OrbitPlayer(OakdTrackingYolo):
                     lineType=8,
                     shift=0,
                 )
+                cv2.putText(
+                    birds,
+                    data["name"],
+                    (point_x - 30, point_y - 10),
+                    cv2.FONT_HERSHEY_TRIPLEX,
+                    0.5,
+                    idColors[data["id"]],
+                )
                 prev_point = None
                 for i in range(0, cur_index):
                     cur_point = (
-                        self.pos_to_point_x(birds.shape[1], data["pos"][i][0]* 1000),
-                        self.pos_to_point_y(birds.shape[0], data["pos"][i][2]* 1000),
+                        self.pos_to_point_x(birds.shape[1], data["pos"][i][0] * 1000),
+                        self.pos_to_point_y(birds.shape[0], data["pos"][i][2] * 1000),
                     )
                     cv2.circle(
                         birds,
@@ -1175,8 +1225,8 @@ class OrbitPlayer(OakdTrackingYolo):
                             thickness=1,
                         )
                     prev_point = (
-                        self.pos_to_point_x(birds.shape[1], data["pos"][i][0]* 1000),
-                        self.pos_to_point_y(birds.shape[0], data["pos"][i][2]* 1000),
+                        self.pos_to_point_x(birds.shape[1], data["pos"][i][0] * 1000),
+                        self.pos_to_point_y(birds.shape[0], data["pos"][i][2] * 1000),
                     )
                 if prev_point is not None:
                     cv2.line(
