@@ -40,6 +40,7 @@ class OakdSpatialYolo(object):
             fov (float): カメラの視野角 (degree)。defaultはOAK-D LiteのHFOVの73.0[deg]。
             cam_debug (bool, optional): カメラのデバッグ用ウィンドウを表示するかどうか。デフォルトはFalse。
             robot_coordinate (bool, optional): ロボットのヘッド向きを使って物体の位置を変換するかどうか。デフォルトはFalse。
+            show_bird_frame (bool, optional): 俯瞰フレームを表示するかどうか。デフォルトはTrue。
 
         """
         if not Path(config_path).exists():
