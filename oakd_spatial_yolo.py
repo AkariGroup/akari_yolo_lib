@@ -48,6 +48,8 @@ class OakdSpatialYolo(object):
             config = json.load(f)
         nnConfig = config.get("nn_config", {})
 
+        self.width = 640
+        self.height = 640
         # parse input shape
         if "input_size" in nnConfig:
             self.width, self.height = tuple(
@@ -156,7 +158,7 @@ class OakdSpatialYolo(object):
         ans = arr_y @ arr_p @ cur_pos
         return ans
 
-    def get_labels(self):
+    def get_labels(self) -> List[Any]:
         """認識ラベルファイルから読み込んだラベルのリストを取得する。
 
         Returns:
