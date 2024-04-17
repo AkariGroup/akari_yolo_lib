@@ -15,7 +15,6 @@ import numpy as np
 from .util import HostSync, TextHelper
 
 DISPLAY_WINDOW_SIZE_RATE = 2.0
-MAX_Z = 15000
 idColors = np.random.random(size=(256, 3)) * 256
 
 
@@ -30,6 +29,7 @@ class OakdSpatialYolo(object):
         fov: float = 73.0,
         cam_debug: bool = False,
         robot_coordinate: bool = False,
+        show_bird_frame: bool = True,
     ) -> None:
         """クラスの初期化メソッド。
 
@@ -48,6 +48,8 @@ class OakdSpatialYolo(object):
             config = json.load(f)
         nnConfig = config.get("nn_config", {})
 
+        self.width = 640
+        self.height = 640
         # parse input shape
         if "input_size" in nnConfig:
             self.width, self.height = tuple(
@@ -88,6 +90,8 @@ class OakdSpatialYolo(object):
         self.fov = fov
         self.cam_debug = cam_debug
         self.robot_coordinate = robot_coordinate
+        self.show_bird_frame = show_bird_frame
+        self.max_z = 15000  # [mm]
         self._stack = contextlib.ExitStack()
         self._pipeline = self._create_pipeline()
         self._device = self._stack.enter_context(dai.Device(self._pipeline))
@@ -113,7 +117,8 @@ class OakdSpatialYolo(object):
             self.sync = HostSync(5)
         else:
             self.sync = HostSync(4)
-        self.bird_eye_frame = self.create_bird_frame()
+        if self.show_bird_frame:
+            self.bird_eye_frame = self.create_bird_frame()
         self.raw_frame = None
 
     def close(self) -> None:
@@ -156,7 +161,7 @@ class OakdSpatialYolo(object):
         ans = arr_y @ arr_p @ cur_pos
         return ans
 
-    def get_labels(self):
+    def get_labels(self) -> List[Any]:
         """認識ラベルファイルから読み込んだラベルのリストを取得する。
 
         Returns:
@@ -433,7 +438,7 @@ class OakdSpatialYolo(object):
         return frame
 
     def display_frame(
-        self, name: str, frame: np.ndarray, detections: List[Any], birds: bool = True
+        self, name: str, frame: np.ndarray, detections: List[Any]
     ) -> None:
         """画像フレームと認識結果を描画する。
 
@@ -441,7 +446,6 @@ class OakdSpatialYolo(object):
             name (str): ウィンドウ名。
             frame (np.ndarray): 画像フレーム。
             detections (List[Any]): 認識結果のリスト。
-            birds(bool): 俯瞰フレームを表示するかどうか。デフォルトはTrue。
 
         """
         if frame is not None:
@@ -468,7 +472,7 @@ class OakdSpatialYolo(object):
             )
             # Show the frame
             cv2.imshow(name, frame)
-            if birds:
+            if self.show_bird_frame:
                 self.draw_bird_frame(detections)
 
     def create_bird_frame(self) -> np.ndarray:
@@ -501,6 +505,40 @@ class OakdSpatialYolo(object):
         cv2.fillPoly(frame, [fov_cnt], color=(70, 70, 70))
         return frame
 
+    def update_bird_frame_distance(self, distance: int) -> None:
+        """俯瞰フレームの距離方向の表示最大値を変更する。
+        Args:
+            distance (int): 最大距離[mm]。
+        """
+        self.max_z = distance
+
+    def pos_to_point_x(self, frame_width: int, pos_x: float) -> int:
+        """
+        3次元位置をbird frame上のx座標に変換する
+
+        Args:
+            frame_width (int): bird frameの幅
+            pos_x (float): 3次元位置のx
+
+        Returns:
+            int: bird frame上のx座標
+        """
+        max_x = self.max_z / 2
+        return int(pos_x / max_x * frame_width + frame_width / 2)
+
+    def pos_to_point_y(self, frame_height: int, pos_z: float) -> int:
+        """
+        3次元位置をbird frame上のy座標に変換する
+
+        Args:
+            frame_height (int): bird frameの高さ
+            pos_z (float): 3次元位置のz
+
+        Returns:
+            int: bird frame上のy座標
+        """
+        return frame_height - int(pos_z / self.max_z * frame_height) - 20
+
     def draw_bird_frame(self, detections: List[Any], show_labels: bool = False) -> None:
         """
         俯瞰フレームに検出結果を描画する。
@@ -511,47 +549,28 @@ class OakdSpatialYolo(object):
 
         """
         birds = self.bird_eye_frame.copy()
-        global MAX_Z
-        max_x = MAX_Z / 2  # mm
         for i in range(0, len(detections)):
-            pointY = (
-                birds.shape[0]
-                - int(
-                    detections[i].spatialCoordinates.z
-                    / (MAX_Z - 10000)
-                    * birds.shape[0]
-                )
-                - 20
+            point_y = self.pos_to_point_y(
+                birds.shape[0], detections[i].spatialCoordinates.z
             )
-            pointX = int(
-                detections[i].spatialCoordinates.x / max_x * birds.shape[1]
-                + birds.shape[1] / 2
+            point_x = self.pos_to_point_x(
+                birds.shape[1], detections[i].spatialCoordinates.x
             )
             if detections[i].label is not None:
                 if show_labels:
                     cv2.putText(
                         birds,
                         self.labels[detections[i].label],
-                        (pointX - 30, pointY + 5),
+                        (point_x - 30, point_y + 5),
                         cv2.FONT_HERSHEY_TRIPLEX,
                         0.5,
-                        (0, 255, 0),
+                        idColors[detections[i].label],
                     )
                 cv2.circle(
                     birds,
-                    (pointX, pointY),
+                    (point_x, point_y),
                     2,
                     idColors[detections[i].label],
-                    thickness=5,
-                    lineType=8,
-                    shift=0,
-                )
-            else:
-                cv2.circle(
-                    birds,
-                    (pointX, pointY),
-                    2,
-                    (0, 255, 0),
                     thickness=5,
                     lineType=8,
                     shift=0,
