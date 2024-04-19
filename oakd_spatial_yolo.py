@@ -524,8 +524,7 @@ class OakdSpatialYolo(object):
         Returns:
             int: bird frame上のx座標
         """
-        max_x = self.max_z / 2
-        return int(pos_x / max_x * frame_width + frame_width / 2)
+        return int(pos_x / self.max_z * frame_width + frame_width / 2)
 
     def pos_to_point_y(self, frame_height: int, pos_z: float) -> int:
         """
