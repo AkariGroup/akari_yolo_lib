@@ -867,6 +867,7 @@ class OrbitDataList(object):
         self.last_update_time = 0.0
         self.data: List[OrbitData] = []
         self.labels: List[str] = labels
+        self.file_name = None
         if log_path is not None:
             if not os.path.exists(log_path):
                 os.makedirs(log_path)
