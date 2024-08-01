@@ -135,9 +135,9 @@ class OakdTrackingYolo(object):
 
             self.akari = AkariClient()
             self.joints = self.akari.joints
-            self.sync = HostSync(5)
+            self.sync = HostSync(6)
         else:
-            self.sync = HostSync(4)
+            self.sync = HostSync(5)
         self.track = None
         if self.show_bird_frame:
             self.bird_eye_frame = self.create_bird_frame()
@@ -333,6 +333,7 @@ class OakdTrackingYolo(object):
         """
         frame = None
         detections = []
+        tracklets = []
         ret = False
         try:
             ret = self.qRgb.has()
@@ -373,12 +374,13 @@ class OakdTrackingYolo(object):
         try:
             ret = self.qTrack.has()
             if ret:
-                self.track = self.qTrack.get()
+                self.sync.add_msg("tracklets", self.qTrack.get())
         except BaseException:
             raise
         msgs = self.sync.get_msgs()
         tracklets = None
         if msgs is not None:
+            tracklets = msgs["tracklets"].tracklets
             detections = msgs["detections"].detections
             frame = msgs["rgb"].getCvFrame()
             depthFrame = msgs["depth"].getFrame()
@@ -409,8 +411,7 @@ class OakdTrackingYolo(object):
                 detection.ymax = (width / height) * detection.ymax - (
                     brank_height / 2 / height
                 )
-            if self.track is not None:
-                tracklets = self.track.tracklets
+            if tracklets is not None:
                 for tracklet in tracklets:
                     # Fix roi to cropped frame pos
                     tracklet.roi.y = (width / height) * tracklet.roi.y - (
