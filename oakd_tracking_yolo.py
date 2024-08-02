@@ -1063,11 +1063,12 @@ class OrbitDataList(object):
                 for pos in data.pos_log
             ],
         }
-        json_open = open(self.file_name, "r")
-        log_file = json.load(json_open)
-        log_file["logs"].append(new_data)
-        with open(self.file_name, mode="wt", encoding="utf-8") as f:
-            json.dump(log_file, f, ensure_ascii=False, indent=2)
+        if self.file_name is not None:
+            json_open = open(self.file_name, "r")
+            log_file = json.load(json_open)
+            log_file["logs"].append(new_data)
+            with open(self.file_name, mode="wt", encoding="utf-8") as f:
+                json.dump(log_file, f, ensure_ascii=False, indent=2)
 
 
 class OrbitPlayer(OakdTrackingYolo):
