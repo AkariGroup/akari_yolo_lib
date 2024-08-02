@@ -21,7 +21,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from .util import HostSync, TextHelper
 
 DISPLAY_WINDOW_SIZE_RATE = 2.0
-idColors = np.random.random(size=(256, 3)) * 256
+idColors = np.random.random(size=(512, 3)) * 256
 
 
 class OakdTrackingYolo(object):
