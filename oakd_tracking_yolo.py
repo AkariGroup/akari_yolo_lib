@@ -892,6 +892,15 @@ class OrbitDataList(object):
         for data in self.data:
             self.save_pos_log(data)
 
+    def get_log_path(self) -> Optional[str]:
+        """logを保存するディレクトリパスを取得する。
+
+        Returns:
+            Optional[str]: logを保存するディレクトリパス。
+
+        """
+        return self.file_name
+
     def get_cur_time(self) -> float:
         """現在の時間を取得する
 
