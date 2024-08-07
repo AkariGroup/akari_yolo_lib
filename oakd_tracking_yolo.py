@@ -21,7 +21,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from .util import HostSync, TextHelper
 
 DISPLAY_WINDOW_SIZE_RATE = 2.0
-idColors = np.random.random(size=(256, 3)) * 256
+idColors = np.random.random(size=(512, 3)) * 256
 
 
 class OakdTrackingYolo(object):
@@ -135,9 +135,9 @@ class OakdTrackingYolo(object):
 
             self.akari = AkariClient()
             self.joints = self.akari.joints
-            self.sync = HostSync(5)
+            self.sync = HostSync(6)
         else:
-            self.sync = HostSync(4)
+            self.sync = HostSync(5)
         self.track = None
         if self.show_bird_frame:
             self.bird_eye_frame = self.create_bird_frame()
@@ -333,6 +333,7 @@ class OakdTrackingYolo(object):
         """
         frame = None
         detections = []
+        tracklets = []
         ret = False
         try:
             ret = self.qRgb.has()
@@ -373,12 +374,13 @@ class OakdTrackingYolo(object):
         try:
             ret = self.qTrack.has()
             if ret:
-                self.track = self.qTrack.get()
+                self.sync.add_msg("tracklets", self.qTrack.get())
         except BaseException:
             raise
         msgs = self.sync.get_msgs()
         tracklets = None
         if msgs is not None:
+            tracklets = msgs["tracklets"].tracklets
             detections = msgs["detections"].detections
             frame = msgs["rgb"].getCvFrame()
             depthFrame = msgs["depth"].getFrame()
@@ -409,8 +411,7 @@ class OakdTrackingYolo(object):
                 detection.ymax = (width / height) * detection.ymax - (
                     brank_height / 2 / height
                 )
-            if self.track is not None:
-                tracklets = self.track.tracklets
+            if tracklets is not None:
                 for tracklet in tracklets:
                     # Fix roi to cropped frame pos
                     tracklet.roi.y = (width / height) * tracklet.roi.y - (
@@ -592,8 +593,7 @@ class OakdTrackingYolo(object):
         Returns:
             int: bird frame上のx座標
         """
-        max_x = self.max_z / 2
-        return int(pos_x / max_x * frame_width + frame_width / 2)
+        return int(pos_x / self.max_z * frame_width + frame_width / 2)
 
     def pos_to_point_y(self, frame_height: int, pos_z: float) -> int:
         """
@@ -872,6 +872,7 @@ class OrbitDataList(object):
         self.data: List[OrbitData] = []
         self.labels: List[str] = labels
         self.filtering = filtering
+        self.file_name = None
         if log_path is not None:
             if not os.path.exists(log_path):
                 os.makedirs(log_path)
@@ -1072,11 +1073,12 @@ class OrbitDataList(object):
                 for pos in data.pos_log
             ],
         }
-        json_open = open(self.file_name, "r")
-        log_file = json.load(json_open)
-        log_file["logs"].append(new_data)
-        with open(self.file_name, mode="wt", encoding="utf-8") as f:
-            json.dump(log_file, f, ensure_ascii=False, indent=2)
+        if self.file_name is not None:
+            json_open = open(self.file_name, "r")
+            log_file = json.load(json_open)
+            log_file["logs"].append(new_data)
+            with open(self.file_name, mode="wt", encoding="utf-8") as f:
+                json.dump(log_file, f, ensure_ascii=False, indent=2)
 
 
 class OrbitPlayer(OakdTrackingYolo):

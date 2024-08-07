@@ -15,7 +15,7 @@ import numpy as np
 from .util import HostSync, TextHelper
 
 DISPLAY_WINDOW_SIZE_RATE = 2.0
-idColors = np.random.random(size=(256, 3)) * 256
+idColors = np.random.random(size=(512, 3)) * 256
 
 
 class OakdSpatialYolo(object):
@@ -524,8 +524,7 @@ class OakdSpatialYolo(object):
         Returns:
             int: bird frame上のx座標
         """
-        max_x = self.max_z / 2
-        return int(pos_x / max_x * frame_width + frame_width / 2)
+        return int(pos_x / self.max_z * frame_width + frame_width / 2)
 
     def pos_to_point_y(self, frame_height: int, pos_z: float) -> int:
         """
