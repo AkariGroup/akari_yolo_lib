@@ -825,7 +825,7 @@ class OakdTrackingYolo(object):
 class PosLog:
     """保存する位置情報"""
 
-    time: int
+    time: float
     x: float
     y: float
     z: float
@@ -854,12 +854,15 @@ class OrbitData(object):
 class OrbitDataList(object):
     """trackletsの移動履歴を保存するためのクラス"""
 
-    def __init__(self, labels: List[str], log_path: Optional[str] = None):
+    def __init__(
+        self, labels: List[str], log_path: Optional[str] = None, filtering: bool = True
+    ):
         """クラスの初期化メソッド。
 
         Args:
             labels (List[str]): trackletsのlabel
-            log_path (Optional[str]): logを保存するディレクトリパス
+            log_path (Optional[str]): logを保存するディレクトリパス。デフォルトはNone。
+            filtering (bool): 位置情報のフィルタリングを行うかどうか。デフォルトはTrue。
         """
         self.LOGGING_INTEREVAL = 0.5
         # LOGGING_INTEREVALの間にこの回数以上存在しなければ誤認識と判定
@@ -868,6 +871,7 @@ class OrbitDataList(object):
         self.last_update_time = 0.0
         self.data: List[OrbitData] = []
         self.labels: List[str] = labels
+        self.filtering = filtering
         self.file_name = None
         if log_path is not None:
             if not os.path.exists(log_path):
@@ -959,11 +963,15 @@ class OrbitDataList(object):
                 new_data = True
                 for data in self.data:
                     if tracklet.id == data.id:
-                        self.add_track_data(tracklet, data.tmp_pos_log)
+                        if self.filtering:
+                            self.add_track_data(tracklet, data.tmp_pos_log)
+                        else:
+                            self.add_track_data(tracklet, data.pos_log)
                         new_data = False
                 if new_data:
                     self.add_new_data(tracklet)
-        self.fix_pos_log()
+        if self.filtering:
+            self.fix_pos_log()
         self.remove_old_data(tracklets)
 
     def weighted_average_position(
@@ -984,7 +992,9 @@ class OrbitDataList(object):
         weighted_sum_z = 0.0
         for log in pos_logs:
             # 時間差に基づいた重みを計算（時間差が小さいほど重みが大きくなる）
-            weight = 1 / (abs(log.time - target_time) + 1e-9)  # ゼロ除算を避けるための微小値
+            weight = 1 / (
+                abs(log.time - target_time) + 1e-9
+            )  # ゼロ除算を避けるための微小値
             total_weight += weight
             weighted_sum_x += log.x * weight
             weighted_sum_y += log.y * weight
