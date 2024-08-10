@@ -873,7 +873,9 @@ class OrbitDataList(object):
         self.labels: List[str] = labels
         self.filtering = filtering
         self.file_name = None
-        if log_path is not None:
+        if log_path is not None and os.path.isfile(log_path):
+            self.file_name = log_path
+        elif log_path is not None:
             if not os.path.exists(log_path):
                 os.makedirs(log_path)
             current_time = datetime.now()
