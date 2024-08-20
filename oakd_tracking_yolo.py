@@ -861,7 +861,9 @@ class OrbitDataList(object):
 
         Args:
             labels (List[str]): trackletsのlabel
-            log_path (Optional[str]): logを保存するディレクトリパス。デフォルトはNone。
+            log_path (Optional[str]): logを保存するパス。デフォルトはNone。
+                                        Noneの場合はLogを保存しない。ディレクトリ名を与えた場合はディレクトリ直下に日付のファイルを新規作成。
+                                        ファイル名を与えた場合、そのファイルが存在すればそのファイルの最終時刻から続けて記録し、保存。
             filtering (bool): 位置情報のフィルタリングを行うかどうか。デフォルトはTrue。
         """
         self.LOGGING_INTEREVAL = 0.5
