@@ -861,7 +861,9 @@ class OrbitDataList(object):
 
         Args:
             labels (List[str]): trackletsのlabel
-            log_path (Optional[str]): logを保存するディレクトリパス。デフォルトはNone。
+            log_path (Optional[str]): logを保存するパス。デフォルトはNone。
+                                        Noneの場合はLogを保存しない。ディレクトリ名を与えた場合はディレクトリ直下に日付のファイルを新規作成。
+                                        ファイル名を与えた場合、そのファイルが存在すればそのファイルの最終時刻から続けて記録し、保存。
             filtering (bool): 位置情報のフィルタリングを行うかどうか。デフォルトはTrue。
         """
         self.LOGGING_INTEREVAL = 0.5
@@ -873,8 +875,23 @@ class OrbitDataList(object):
         self.labels: List[str] = labels
         self.filtering = filtering
         self.file_name = None
+        self.cur_id = 0
         if log_path is not None and os.path.isfile(log_path):
+            try:
+                json_open = open(log_path, "r")
+                log = json.load(json_open)
+            except Exception as e:
+                print(f"Error: Json file open failed. {e}")
             self.file_name = log_path
+            # 既存のログファイルを引き継ぐ場合、最後のログの時間を取得
+            if "logs" in log:
+                if len(log["logs"]) > 0:
+                    self.start_time -= max(
+                        [log_data["time"] for log_data in log["logs"]], default=time.time()
+                    )
+                    self.cur_id = max(
+                        [log_data["id"] for log_data in log["logs"]], default=0
+                    ) + 1
         elif log_path is not None:
             if not os.path.exists(log_path):
                 os.makedirs(log_path)
@@ -1072,7 +1089,7 @@ class OrbitDataList(object):
         if len(data.pos_log) == 0:
             return
         new_data: LogJson = {
-            "id": data.id,
+            "id": self.cur_id,
             "name": data.name,
             "time": data.pos_log[0].time,
             "pos": [
@@ -1090,6 +1107,7 @@ class OrbitDataList(object):
             log_file["logs"].append(new_data)
             with open(self.file_name, mode="wt", encoding="utf-8") as f:
                 json.dump(log_file, f, ensure_ascii=False, indent=2)
+        self.cur_id += 1
 
 
 class OrbitPlayer(OakdTrackingYolo):
