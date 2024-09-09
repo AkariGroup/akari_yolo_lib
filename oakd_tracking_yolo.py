@@ -826,7 +826,7 @@ class OakdTrackingYolo(object):
 class PosLog:
     """保存する位置情報"""
 
-    time: datetime
+    time: float
     x: float
     y: float
     z: float
@@ -872,8 +872,9 @@ class OrbitDataList(object):
         # LOGGING_INTEREVALの間にこの回数以上存在しなければ誤認識と判定
         self.AVAILABLE_TIME_THRESHOLD = 3
         self.LOG_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
-        self.start_time = datetime.now()
-        self.last_update_time = datetime.now()
+        self.start_time = time.time()
+        self.start_datetime = datetime.now()
+        self.last_update_time = 0.0
         self.data: List[OrbitData] = []
         self.labels: List[str] = labels
         self.filtering = filtering
@@ -888,13 +889,25 @@ class OrbitDataList(object):
             self.file_name = log_path
             # 既存のログファイルを引き継ぐ場合、最後のログの時間を取得
             if len(log) > 0:
-                self.start_time = datetime.min(
-                    [
-                        datetime.strptime(log_data["time"], self.LOG_DATETIME_FORMAT)
-                        for log_data in log
-                    ],
-                    default=time.time(),
+                self.start_time -= (
+                    datetime.max(
+                        [
+                            datetime.strptime(
+                                log_data["time"], self.LOG_DATETIME_FORMAT
+                            )
+                            for log_data in log
+                        ],
+                    )
+                    - datetime.min(
+                        [
+                            datetime.strptime(
+                                log_data["time"], self.LOG_DATETIME_FORMAT
+                            )
+                            for log_data in log
+                        ]
+                    ).total_seconds()
                 )
+
                 self.cur_id = max([log_data["id"] for log_data in log], default=0) + 1
         elif log_path is not None:
             if not os.path.exists(log_path):
@@ -903,9 +916,8 @@ class OrbitDataList(object):
             self.file_name = (
                 log_path + f"/data_{current_time.strftime('%Y%m%d_%H%M%S')}.jsonl"
             )
-            init_json = {}
-            with open(self.file_name, mode="wt", encoding="utf-8") as f:
-                ndjson.dump(init_json, f, ensure_ascii=False, indent=2)
+            with open(self.file_name, mode="w", encoding="utf-8") as f:
+                f.write('')
 
     def __del__(self):
         """OrbitDataListオブジェクトが削除される際に呼び出されるデストラクタ。"""
@@ -927,7 +939,7 @@ class OrbitDataList(object):
         Returns:
             float: 現在の時間
         """
-        return (datetime.now() - self.start_time).total_seconds()
+        return time.time() - self.start_time
 
     def get_orbit_from_id(self, id: int) -> OrbitData:
         """IDからOrbitDataを取得する
@@ -952,7 +964,7 @@ class OrbitDataList(object):
 
         """
         pos_data = PosLog(
-            time=datetime.now(),
+            time=self.get_cur_time(),
             x=tracklet.spatialCoordinates.x,
             y=tracklet.spatialCoordinates.y,
             z=tracklet.spatialCoordinates.z,
@@ -971,7 +983,7 @@ class OrbitDataList(object):
 
         """
         pos_data = PosLog(
-            time=datetime.now(),
+            time=self.get_cur_time(),
             x=tracklet.spatialCoordinates.x,
             y=tracklet.spatialCoordinates.y,
             z=tracklet.spatialCoordinates.z,
@@ -1004,7 +1016,7 @@ class OrbitDataList(object):
         self.remove_old_data(tracklets)
 
     def weighted_average_position(
-        self, pos_logs: List[PosLog], target_time: datetime
+        self, pos_logs: List[PosLog], target_time: float
     ) -> PosLog:
         """指定された時間での位置を、重み付け平均から推測する。
 
@@ -1022,7 +1034,7 @@ class OrbitDataList(object):
         for log in pos_logs:
             # 時間差に基づいた重みを計算（時間差が小さいほど重みが大きくなる）
             weight = 1 / (
-                abs((log.time - target_time).total_seconds()) + 1e-9
+                abs(log.time - target_time) + 1e-9
             )  # ゼロ除算を避けるための微小値
             total_weight += weight
             weighted_sum_x += log.x * weight
@@ -1037,16 +1049,16 @@ class OrbitDataList(object):
 
     def fix_pos_log(self) -> None:
         """tmp_pos_logに保存された位置情報をLOGGING_INTEREVALで時間平均してpos_logに保存"""
-        cur_time = datetime.now()
+        cur_time = self.get_cur_time()
         while True:
-            next_time = self.last_update_time + timedelta(seconds=(self.LOGGING_INTEREVAL * 3 / 2))
-            if (cur_time - next_time).total_seconds() < 0:
+            next_time = self.last_update_time + self.LOGGING_INTEREVAL * 3 / 2
+            if cur_time - next_time < 0:
                 break
             for data in self.data:
                 tmp_list: List[PosLog] = []
                 while True:
                     if len(data.tmp_pos_log) > 0:
-                        if (data.tmp_pos_log[0].time - next_time).total_seconds() < 0:
+                        if data.tmp_pos_log[0].time < next_time:
                             tmp_list.append(data.tmp_pos_log.pop(0))
                         else:
                             break
@@ -1055,10 +1067,10 @@ class OrbitDataList(object):
                 if len(tmp_list) >= self.AVAILABLE_TIME_THRESHOLD:
                     data.pos_log.append(
                         self.weighted_average_position(
-                            tmp_list, self.last_update_time + timedelta(seconds=self.LOGGING_INTEREVAL)
+                            tmp_list, self.last_update_time + self.LOGGING_INTEREVAL
                         )
                     )
-            self.last_update_time + timedelta(seconds=self.LOGGING_INTEREVAL)
+            self.last_update_time += self.LOGGING_INTEREVAL
 
     def remove_old_data(self, tracklets: List[Any]) -> None:
         """trackletsから消えたデータをpos_logから削除して保存
@@ -1092,10 +1104,9 @@ class OrbitDataList(object):
         new_data: LogJson = {
             "id": self.cur_id,
             "name": data.name,
-            "time": datetime.strptime(
-                data.pos_log[0].time,
-                self.LOG_DATETIME_FORMAT,
-            ),
+            "time": (
+                self.start_datetime + timedelta(seconds=data.pos_log[0].time)
+            ).strftime(self.LOG_DATETIME_FORMAT),
             "interval": self.LOGGING_INTEREVAL,
             "pos": [
                 (
@@ -1110,7 +1121,7 @@ class OrbitDataList(object):
             json_open = open(self.file_name, "r")
             log_file = ndjson.load(json_open)
             log_file.append(new_data)
-            with open(self.file_name, mode="wt", encoding="utf-8") as f:
+            with open(self.file_name, mode="a", encoding="utf-8") as f:
                 writer = ndjson.writer(f)
                 writer.writerow(new_data)
         self.cur_id += 1
@@ -1139,7 +1150,7 @@ class OrbitPlayer(OakdTrackingYolo):
         self.log = None
         try:
             json_open = open(log_path, "r")
-            self.log = ndjson.load(json_open)
+            self.log = json.load(json_open)
         except FileNotFoundError:
             print(f"Error: The file {log_path} does not exist.")
             return
@@ -1149,7 +1160,7 @@ class OrbitPlayer(OakdTrackingYolo):
         self.interval = float(self.log["interval"])
         self.end_time = self.get_end_time(self.log["logs"])
         self.bird_eye_frame = self.create_bird_frame()
-        self.datetime = datetime.strptime(self.start_tim, "%Y/%m/%d %H:%M:%S")
+        self.datetime = datetime.strptime(self.log["start_time"], "%Y/%m/%d %H:%M:%S")
 
     def get_end_time(self, logs: List[Any]) -> float:
         """
@@ -1163,7 +1174,7 @@ class OrbitPlayer(OakdTrackingYolo):
         """
         end_time = 0
         for data in logs:
-            cur_end_time = float(data["time"]) + data["interval"] * len(data["pos"])
+            cur_end_time = float(data["time"]) + self.interval * len(data["pos"])
             if cur_end_time > end_time:
                 end_time = cur_end_time
         return end_time
@@ -1202,7 +1213,7 @@ class OrbitPlayer(OakdTrackingYolo):
                     updated_plotting_list.append(plotting_data)
             plotting_list = copy.deepcopy(updated_plotting_list)
             self.draw_bird_frame(now, plotting_list)
-            now += data["interval"]
+            now += self.interval
             self.datetime += timedelta(seconds=self.interval)
             time.sleep(self.interval / self.speed)
 
