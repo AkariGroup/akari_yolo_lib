@@ -3,7 +3,6 @@
 import contextlib
 import copy
 import json
-import ndjson
 import math
 import os
 import time
@@ -16,6 +15,7 @@ import blobconverter
 import cv2
 import depthai as dai
 import matplotlib.pyplot as plt
+import ndjson
 import numpy as np
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
@@ -112,7 +112,9 @@ class OakdTrackingYolo(object):
         self.show_orbit = show_orbit
         self.max_z = 15000  # [mm]
         if self.show_orbit:
-            self.orbit_data_list = OrbitDataList(labels=self.labels, log_path=log_path,log_continue=log_continue)
+            self.orbit_data_list = OrbitDataList(
+                labels=self.labels, log_path=log_path, log_continue=log_continue
+            )
         self._stack = contextlib.ExitStack()
         self._pipeline = self._create_pipeline()
         self._device = self._stack.enter_context(dai.Device(self._pipeline))
@@ -859,7 +861,11 @@ class OrbitDataList(object):
     """trackletsの移動履歴を保存するためのクラス"""
 
     def __init__(
-        self, labels: List[str], log_path: Optional[str] = None, filtering: bool = True, log_continue:bool=False
+        self,
+        labels: List[str],
+        log_path: Optional[str] = None,
+        filtering: bool = True,
+        log_continue: bool = False,
     ):
         """クラスの初期化メソッド。
 
@@ -870,11 +876,11 @@ class OrbitDataList(object):
                                         ファイル名を与えた場合、そのファイルが存在すればそのファイルの最終時刻から続けて記録し、保存。
             filtering (bool): 位置情報のフィルタリングを行うかどうか。デフォルトはTrue。
             log_continue(bool): log_pathでファイルを指定した際に、軌道履歴をログの最終時刻から継続するかどうか。デフォルトはFalse。
-       """
+        """
         self.LOGGING_INTEREVAL = 0.5
         # LOGGING_INTEREVALの間にこの回数以上存在しなければ誤認識と判定
         self.AVAILABLE_TIME_THRESHOLD = 3
-        self.LOG_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+        self.LOG_DATETIME_FORMAT = "%Y/%m/%d %H:%M:%S"
         self.start_time = time.time()
         self.start_datetime = datetime.now()
         self.last_update_time = 0.0
@@ -892,7 +898,15 @@ class OrbitDataList(object):
             self.file_name = log_path
             # 既存のログファイルを引き継ぐ場合、最後のログの時間を取得
             if len(log) > 0 and log_continue:
-                self.start_datetime = datetime.strptime(max(log, key=lambda x: datetime.strptime(x['time'], self.LOG_DATETIME_FORMAT))['time'], self.LOG_DATETIME_FORMAT)
+                self.start_datetime = datetime.strptime(
+                    max(
+                        log,
+                        key=lambda x: datetime.strptime(
+                            x["time"], self.LOG_DATETIME_FORMAT
+                        ),
+                    )["time"],
+                    self.LOG_DATETIME_FORMAT,
+                )
                 self.cur_id = max([log_data["id"] for log_data in log], default=0) + 1
         elif log_path is not None:
             if not os.path.exists(log_path):
@@ -902,7 +916,7 @@ class OrbitDataList(object):
                 log_path + f"/data_{current_time.strftime('%Y%m%d_%H%M%S')}.jsonl"
             )
             with open(self.file_name, mode="w", encoding="utf-8") as f:
-                f.write('')
+                f.write("")
 
     def __del__(self):
         """OrbitDataListオブジェクトが削除される際に呼び出されるデストラクタ。"""
@@ -1018,9 +1032,7 @@ class OrbitDataList(object):
         weighted_sum_z = 0.0
         for log in pos_logs:
             # 時間差に基づいた重みを計算（時間差が小さいほど重みが大きくなる）
-            weight = 1 / (
-                abs(log.time - target_time) + 1e-9
-            )  # ゼロ除算を避けるための微小値
+            weight = 1 / (abs(log.time - target_time) + 1e-9)  # ゼロ除算を避けるための微小値
             total_weight += weight
             weighted_sum_x += log.x * weight
             weighted_sum_y += log.y * weight
@@ -1132,20 +1144,27 @@ class OrbitPlayer(OakdTrackingYolo):
         Raises:
             FileNotFoundError: ログファイルが存在しない場合に発生.
         """
+        self.LOG_DATETIME_FORMAT = "%Y/%m/%d %H:%M:%S"
         self.log = None
         try:
             json_open = open(log_path, "r")
-            self.log = json.load(json_open)
+            self.log = ndjson.load(json_open)
         except FileNotFoundError:
             print(f"Error: The file {log_path} does not exist.")
             return
         self.fov = fov
         self.speed = speed
         self.max_z = max_z
-        self.interval = float(self.log["interval"])
-        self.end_time = self.get_end_time(self.log["logs"])
+        self.interval = float(self.log[0]["interval"])
         self.bird_eye_frame = self.create_bird_frame()
-        self.datetime = datetime.strptime(self.log["start_time"], "%Y/%m/%d %H:%M:%S")
+        self.datetime = datetime.strptime(
+            min(
+                self.log,
+                key=lambda x: datetime.strptime(x["time"], self.LOG_DATETIME_FORMAT),
+            )["time"],
+            self.LOG_DATETIME_FORMAT,
+        )
+        self.end_time = self.get_end_time(self.log)
 
     def get_end_time(self, logs: List[Any]) -> float:
         """
@@ -1159,7 +1178,11 @@ class OrbitPlayer(OakdTrackingYolo):
         """
         end_time = 0
         for data in logs:
-            cur_end_time = float(data["time"]) + self.interval * len(data["pos"])
+            cur_end_time = (
+                datetime.strptime(data["time"], self.LOG_DATETIME_FORMAT)
+                + timedelta(seconds=self.interval * len(data["pos"]))
+                - self.datetime
+            ).total_seconds()
             if cur_end_time > end_time:
                 end_time = cur_end_time
         return end_time
@@ -1176,7 +1199,13 @@ class OrbitPlayer(OakdTrackingYolo):
                 -2 は開始時刻前、-1 は時刻が最終インデックスを超えている、
                 それ以外の正の整数はインデックスを表す。
         """
-        spend_time = now - float(data["time"])
+        spend_time = (
+            now
+            - (
+                datetime.strptime(data["time"], self.LOG_DATETIME_FORMAT)
+                - self.datetime
+            ).total_seconds()
+        )
         if spend_time < 0:
             return -2
         if spend_time >= self.interval * len(data["pos"]):
@@ -1189,8 +1218,11 @@ class OrbitPlayer(OakdTrackingYolo):
         now = 0.0
         while now <= self.end_time:
             # 記録開始時間に到達したらplotting_listに追加
-            for data in self.log["logs"]:
-                if data["time"] == now:
+            for data in self.log:
+                if (
+                    datetime.strptime(data["time"], self.LOG_DATETIME_FORMAT)
+                    - self.datetime
+                ).total_seconds() == now:
                     plotting_list.append(copy.deepcopy(data))
             updated_plotting_list = []
             for plotting_data in plotting_list:
