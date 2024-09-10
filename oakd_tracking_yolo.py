@@ -41,6 +41,7 @@ class OakdTrackingYolo(object):
         show_spatial_frame: bool = False,
         show_orbit: bool = False,
         log_path: Optional[str] = None,
+        log_continue: bool = False,
     ) -> None:
         """クラスの初期化メソッド。
 
@@ -56,6 +57,7 @@ class OakdTrackingYolo(object):
             show_spatial_frame (bool, optional): 3次元フレームを表示するかどうか。デフォルトはFalse。
             show_orbit (bool, optional): 3次元軌道を表示するかどうか。デフォルトはFalse。
             log_path (Optional[str], optional): 物体の軌道履歴を保存するパス。show_orbitがTrueの時のみ有効。
+            log_continue(bool): log_pathでファイルを指定した際に、軌道履歴をログの最終時刻から継続するかどうか。デフォルトはFalse。
 
         """
         if not Path(config_path).exists():
@@ -110,7 +112,7 @@ class OakdTrackingYolo(object):
         self.show_orbit = show_orbit
         self.max_z = 15000  # [mm]
         if self.show_orbit:
-            self.orbit_data_list = OrbitDataList(labels=self.labels, log_path=log_path)
+            self.orbit_data_list = OrbitDataList(labels=self.labels, log_path=log_path,log_continue=log_continue)
         self._stack = contextlib.ExitStack()
         self._pipeline = self._create_pipeline()
         self._device = self._stack.enter_context(dai.Device(self._pipeline))
@@ -857,7 +859,7 @@ class OrbitDataList(object):
     """trackletsの移動履歴を保存するためのクラス"""
 
     def __init__(
-        self, labels: List[str], log_path: Optional[str] = None, filtering: bool = True
+        self, labels: List[str], log_path: Optional[str] = None, filtering: bool = True, log_continue:bool=False
     ):
         """クラスの初期化メソッド。
 
@@ -867,7 +869,8 @@ class OrbitDataList(object):
                                         Noneの場合はLogを保存しない。ディレクトリ名を与えた場合はディレクトリ直下に日付のファイルを新規作成。
                                         ファイル名を与えた場合、そのファイルが存在すればそのファイルの最終時刻から続けて記録し、保存。
             filtering (bool): 位置情報のフィルタリングを行うかどうか。デフォルトはTrue。
-        """
+            log_continue(bool): log_pathでファイルを指定した際に、軌道履歴をログの最終時刻から継続するかどうか。デフォルトはFalse。
+       """
         self.LOGGING_INTEREVAL = 0.5
         # LOGGING_INTEREVALの間にこの回数以上存在しなければ誤認識と判定
         self.AVAILABLE_TIME_THRESHOLD = 3
@@ -888,26 +891,8 @@ class OrbitDataList(object):
                 print(f"Error: Json file open failed. {e}")
             self.file_name = log_path
             # 既存のログファイルを引き継ぐ場合、最後のログの時間を取得
-            if len(log) > 0:
-                self.start_time -= (
-                    datetime.max(
-                        [
-                            datetime.strptime(
-                                log_data["time"], self.LOG_DATETIME_FORMAT
-                            )
-                            for log_data in log
-                        ],
-                    )
-                    - datetime.min(
-                        [
-                            datetime.strptime(
-                                log_data["time"], self.LOG_DATETIME_FORMAT
-                            )
-                            for log_data in log
-                        ]
-                    ).total_seconds()
-                )
-
+            if len(log) > 0 and log_continue:
+                self.start_datetime = datetime.strptime(max(log, key=lambda x: datetime.strptime(x['time'], self.LOG_DATETIME_FORMAT))['time'], self.LOG_DATETIME_FORMAT)
                 self.cur_id = max([log_data["id"] for log_data in log], default=0) + 1
         elif log_path is not None:
             if not os.path.exists(log_path):
