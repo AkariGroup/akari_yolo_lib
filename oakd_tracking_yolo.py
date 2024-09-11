@@ -114,11 +114,10 @@ class OakdTrackingYolo(object):
         self.log = []
         if self.show_orbit:
             self.orbit_data_list = OrbitDataList(
-<<<<<<< HEAD
-                labels=self.labels, log_path=log_path, log_continue=log_continue
-=======
-                labels=self.labels,log_shared=self.log, log_path=log_path, log_continue=log_continue
->>>>>>> 9d5e6cb (Fix shared log)
+                oakd_tracking_yolo=self,
+                labels=self.labels,
+                log_path=log_path,
+                log_continue=log_continue,
             )
         self._stack = contextlib.ExitStack()
         self._pipeline = self._create_pipeline()
@@ -867,11 +866,8 @@ class OrbitDataList(object):
 
     def __init__(
         self,
+        oakd_tracking_yolo: OakdTrackingYolo,
         labels: List[str],
-<<<<<<< HEAD
-=======
-        log_shared: Optional[List[LogJson]] = None,
->>>>>>> 9d5e6cb (Fix shared log)
         log_path: Optional[str] = None,
         filtering: bool = True,
         log_continue: bool = False,
@@ -879,6 +875,7 @@ class OrbitDataList(object):
         """クラスの初期化メソッド。
 
         Args:
+            oakd_tracking_yolo (OakdTrackingYolo): トラッキング結果を取得するためのオブジェクト。
             labels (List[str]): trackletsのlabel
             log_shared (Optional[List[LogJson]]): 親クラスとログを共有する場合、ここで渡す。デフォルトはNone。
             log_path (Optional[str]): logを保存するパス。デフォルトはNone。
@@ -887,6 +884,7 @@ class OrbitDataList(object):
             filtering (bool): 位置情報のフィルタリングを行うかどうか。デフォルトはTrue。
             log_continue(bool): log_pathでファイルを指定した際に、軌道履歴をログの最終時刻から継続するかどうか。デフォルトはFalse。
         """
+        self.oakd_tracking_yolo = oakd_tracking_yolo
         self.LOGGING_INTEREVAL = 0.5
         # LOGGING_INTEREVALの間にこの回数以上存在しなければ誤認識と判定
         self.AVAILABLE_TIME_THRESHOLD = 3
@@ -899,28 +897,31 @@ class OrbitDataList(object):
         self.filtering = filtering
         self.file_name = None
         self.cur_id = 0
-        self.log_shared = None
-        if log_shared is not None:
-            self.log_shared = log_shared
         if log_path is not None and os.path.isfile(log_path):
             try:
                 json_open = open(log_path, "r")
-                log = ndjson.load(json_open)
+                self.oakd_tracking_yolo.log = ndjson.load(json_open)
             except Exception as e:
                 print(f"Error: Json file open failed. {e}")
             self.file_name = log_path
             # 既存のログファイルを引き継ぐ場合、最後のログの時間を取得
-            if len(log) > 0 and log_continue:
+            if len(self.oakd_tracking_yolo.log) > 0 and log_continue:
                 self.start_datetime = datetime.strptime(
                     max(
-                        log,
+                        self.oakd_tracking_yolo.log,
                         key=lambda x: datetime.strptime(
                             x["time"], self.LOG_DATETIME_FORMAT
                         ),
                     )["time"],
                     self.LOG_DATETIME_FORMAT,
                 )
-                self.cur_id = max([log_data["id"] for log_data in log], default=0) + 1
+                self.cur_id = (
+                    max(
+                        [log_data["id"] for log_data in self.oakd_tracking_yolo.log],
+                        default=0,
+                    )
+                    + 1
+                )
         elif log_path is not None:
             if not os.path.exists(log_path):
                 os.makedirs(log_path)
@@ -1131,8 +1132,7 @@ class OrbitDataList(object):
             json_open = open(self.file_name, "r")
             log_file = ndjson.load(json_open)
             log_file.append(new_data)
-            if self.log_shared is not None:
-                self.log_shared.append(new_data)
+            self.oakd_tracking_yolo.log.append(new_data)
             with open(self.file_name, mode="a", encoding="utf-8") as f:
                 writer = ndjson.writer(f)
                 writer.writerow(new_data)

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import ndjson
 from datetime import datetime, timedelta
+
+import ndjson
 
 LOG_DATETIME_FORMAT = "%Y/%m/%d %H:%M:%S"
 
@@ -34,9 +35,10 @@ def main() -> None:
         f.write("")
     for data in log["logs"]:
         new_data = {}
-        new_data["time"] = (datetime.strptime(
-            start_time, LOG_DATETIME_FORMAT
-        ) + timedelta(seconds=data["time"])).strftime(LOG_DATETIME_FORMAT)
+        new_data["time"] = (
+            datetime.strptime(start_time, LOG_DATETIME_FORMAT)
+            + timedelta(seconds=data["time"])
+        ).strftime(LOG_DATETIME_FORMAT)
         new_data["interval"] = interval
         new_data["pos"] = data["pos"]
         new_data["id"] = data["id"]
