@@ -15,6 +15,7 @@ import blobconverter
 import cv2
 import depthai as dai
 import matplotlib.pyplot as plt
+import ndjson
 import numpy as np
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
@@ -40,6 +41,7 @@ class OakdTrackingYolo(object):
         show_spatial_frame: bool = False,
         show_orbit: bool = False,
         log_path: Optional[str] = None,
+        log_continue: bool = False,
     ) -> None:
         """クラスの初期化メソッド。
 
@@ -55,6 +57,7 @@ class OakdTrackingYolo(object):
             show_spatial_frame (bool, optional): 3次元フレームを表示するかどうか。デフォルトはFalse。
             show_orbit (bool, optional): 3次元軌道を表示するかどうか。デフォルトはFalse。
             log_path (Optional[str], optional): 物体の軌道履歴を保存するパス。show_orbitがTrueの時のみ有効。
+            log_continue(bool): log_pathでファイルを指定した際に、軌道履歴をログの最終時刻から継続するかどうか。デフォルトはFalse。
 
         """
         if not Path(config_path).exists():
@@ -108,8 +111,14 @@ class OakdTrackingYolo(object):
         self.show_spatial_frame = show_spatial_frame
         self.show_orbit = show_orbit
         self.max_z = 15000  # [mm]
+        self.log = []
         if self.show_orbit:
-            self.orbit_data_list = OrbitDataList(labels=self.labels, log_path=log_path)
+            self.orbit_data_list = OrbitDataList(
+                oakd_tracking_yolo=self,
+                labels=self.labels,
+                log_path=log_path,
+                log_continue=log_continue,
+            )
         self._stack = contextlib.ExitStack()
         self._pipeline = self._create_pipeline()
         self._device = self._stack.enter_context(dai.Device(self._pipeline))
@@ -836,7 +845,8 @@ class LogJson(TypedDict):
 
     id: int
     name: str
-    time: float
+    time: str
+    interval: float
     pos: List[Tuple[float, float, float]]
 
 
@@ -855,21 +865,32 @@ class OrbitDataList(object):
     """trackletsの移動履歴を保存するためのクラス"""
 
     def __init__(
-        self, labels: List[str], log_path: Optional[str] = None, filtering: bool = True
+        self,
+        oakd_tracking_yolo: OakdTrackingYolo,
+        labels: List[str],
+        log_path: Optional[str] = None,
+        filtering: bool = True,
+        log_continue: bool = False,
     ):
         """クラスの初期化メソッド。
 
         Args:
+            oakd_tracking_yolo (OakdTrackingYolo): トラッキング結果を取得するためのオブジェクト。
             labels (List[str]): trackletsのlabel
+            log_shared (Optional[List[LogJson]]): 親クラスとログを共有する場合、ここで渡す。デフォルトはNone。
             log_path (Optional[str]): logを保存するパス。デフォルトはNone。
                                         Noneの場合はLogを保存しない。ディレクトリ名を与えた場合はディレクトリ直下に日付のファイルを新規作成。
                                         ファイル名を与えた場合、そのファイルが存在すればそのファイルの最終時刻から続けて記録し、保存。
             filtering (bool): 位置情報のフィルタリングを行うかどうか。デフォルトはTrue。
+            log_continue(bool): log_pathでファイルを指定した際に、軌道履歴をログの最終時刻から継続するかどうか。デフォルトはFalse。
         """
+        self.oakd_tracking_yolo = oakd_tracking_yolo
         self.LOGGING_INTEREVAL = 0.5
         # LOGGING_INTEREVALの間にこの回数以上存在しなければ誤認識と判定
         self.AVAILABLE_TIME_THRESHOLD = 3
+        self.LOG_DATETIME_FORMAT = "%Y/%m/%d %H:%M:%S"
         self.start_time = time.time()
+        self.start_datetime = datetime.now()
         self.last_update_time = 0.0
         self.data: List[OrbitData] = []
         self.labels: List[str] = labels
@@ -879,32 +900,37 @@ class OrbitDataList(object):
         if log_path is not None and os.path.isfile(log_path):
             try:
                 json_open = open(log_path, "r")
-                log = json.load(json_open)
+                self.oakd_tracking_yolo.log = ndjson.load(json_open)
             except Exception as e:
                 print(f"Error: Json file open failed. {e}")
             self.file_name = log_path
             # 既存のログファイルを引き継ぐ場合、最後のログの時間を取得
-            if "logs" in log:
-                if len(log["logs"]) > 0:
-                    self.start_time -= max(
-                        [log_data["time"] for log_data in log["logs"]], default=time.time()
+            if len(self.oakd_tracking_yolo.log) > 0 and log_continue:
+                self.start_datetime = datetime.strptime(
+                    max(
+                        self.oakd_tracking_yolo.log,
+                        key=lambda x: datetime.strptime(
+                            x["time"], self.LOG_DATETIME_FORMAT
+                        ),
+                    )["time"],
+                    self.LOG_DATETIME_FORMAT,
+                )
+                self.cur_id = (
+                    max(
+                        [log_data["id"] for log_data in self.oakd_tracking_yolo.log],
+                        default=0,
                     )
-                    self.cur_id = max(
-                        [log_data["id"] for log_data in log["logs"]], default=0
-                    ) + 1
+                    + 1
+                )
         elif log_path is not None:
             if not os.path.exists(log_path):
                 os.makedirs(log_path)
             current_time = datetime.now()
             self.file_name = (
-                log_path + f"/data_{current_time.strftime('%Y%m%d_%H%M%S')}.json"
+                log_path + f"/data_{current_time.strftime('%Y%m%d_%H%M%S')}.jsonl"
             )
-            init_json = {}
-            init_json["start_time"] = f"{current_time.strftime('%Y/%m/%d %H:%M:%S')}"
-            init_json["interval"] = self.LOGGING_INTEREVAL
-            init_json["logs"] = []
-            with open(self.file_name, mode="wt", encoding="utf-8") as f:
-                json.dump(init_json, f, ensure_ascii=False, indent=2)
+            with open(self.file_name, mode="w", encoding="utf-8") as f:
+                f.write("")
 
     def __del__(self):
         """OrbitDataListオブジェクトが削除される際に呼び出されるデストラクタ。"""
@@ -1020,9 +1046,7 @@ class OrbitDataList(object):
         weighted_sum_z = 0.0
         for log in pos_logs:
             # 時間差に基づいた重みを計算（時間差が小さいほど重みが大きくなる）
-            weight = 1 / (
-                abs(log.time - target_time) + 1e-9
-            )  # ゼロ除算を避けるための微小値
+            weight = 1 / (abs(log.time - target_time) + 1e-9)  # ゼロ除算を避けるための微小値
             total_weight += weight
             weighted_sum_x += log.x * weight
             weighted_sum_y += log.y * weight
@@ -1091,7 +1115,10 @@ class OrbitDataList(object):
         new_data: LogJson = {
             "id": self.cur_id,
             "name": data.name,
-            "time": data.pos_log[0].time,
+            "time": (
+                self.start_datetime + timedelta(seconds=data.pos_log[0].time)
+            ).strftime(self.LOG_DATETIME_FORMAT),
+            "interval": self.LOGGING_INTEREVAL,
             "pos": [
                 (
                     round(pos.x / 1000.0, 3),
@@ -1103,10 +1130,12 @@ class OrbitDataList(object):
         }
         if self.file_name is not None:
             json_open = open(self.file_name, "r")
-            log_file = json.load(json_open)
-            log_file["logs"].append(new_data)
-            with open(self.file_name, mode="wt", encoding="utf-8") as f:
-                json.dump(log_file, f, ensure_ascii=False, indent=2)
+            log_file = ndjson.load(json_open)
+            log_file.append(new_data)
+            self.oakd_tracking_yolo.log.append(new_data)
+            with open(self.file_name, mode="a", encoding="utf-8") as f:
+                writer = ndjson.writer(f)
+                writer.writerow(new_data)
         self.cur_id += 1
 
 
@@ -1130,20 +1159,27 @@ class OrbitPlayer(OakdTrackingYolo):
         Raises:
             FileNotFoundError: ログファイルが存在しない場合に発生.
         """
+        self.LOG_DATETIME_FORMAT = "%Y/%m/%d %H:%M:%S"
         self.log = None
         try:
             json_open = open(log_path, "r")
-            self.log = json.load(json_open)
+            self.log = ndjson.load(json_open)
         except FileNotFoundError:
             print(f"Error: The file {log_path} does not exist.")
             return
         self.fov = fov
         self.speed = speed
         self.max_z = max_z
-        self.interval = float(self.log["interval"])
-        self.end_time = self.get_end_time(self.log["logs"])
+        self.interval = float(self.log[0]["interval"])
         self.bird_eye_frame = self.create_bird_frame()
-        self.datetime = datetime.strptime(self.log["start_time"], "%Y/%m/%d %H:%M:%S")
+        self.datetime = datetime.strptime(
+            min(
+                self.log,
+                key=lambda x: datetime.strptime(x["time"], self.LOG_DATETIME_FORMAT),
+            )["time"],
+            self.LOG_DATETIME_FORMAT,
+        )
+        self.end_time = self.get_end_time(self.log)
 
     def get_end_time(self, logs: List[Any]) -> float:
         """
@@ -1157,7 +1193,11 @@ class OrbitPlayer(OakdTrackingYolo):
         """
         end_time = 0
         for data in logs:
-            cur_end_time = float(data["time"]) + self.interval * len(data["pos"])
+            cur_end_time = (
+                datetime.strptime(data["time"], self.LOG_DATETIME_FORMAT)
+                + timedelta(seconds=self.interval * len(data["pos"]))
+                - self.datetime
+            ).total_seconds()
             if cur_end_time > end_time:
                 end_time = cur_end_time
         return end_time
@@ -1174,7 +1214,13 @@ class OrbitPlayer(OakdTrackingYolo):
                 -2 は開始時刻前、-1 は時刻が最終インデックスを超えている、
                 それ以外の正の整数はインデックスを表す。
         """
-        spend_time = now - float(data["time"])
+        spend_time = (
+            now
+            - (
+                datetime.strptime(data["time"], self.LOG_DATETIME_FORMAT)
+                - self.datetime
+            ).total_seconds()
+        )
         if spend_time < 0:
             return -2
         if spend_time >= self.interval * len(data["pos"]):
@@ -1187,8 +1233,11 @@ class OrbitPlayer(OakdTrackingYolo):
         now = 0.0
         while now <= self.end_time:
             # 記録開始時間に到達したらplotting_listに追加
-            for data in self.log["logs"]:
-                if data["time"] == now:
+            for data in self.log:
+                if (
+                    datetime.strptime(data["time"], self.LOG_DATETIME_FORMAT)
+                    - self.datetime
+                ).total_seconds() == now:
                     plotting_list.append(copy.deepcopy(data))
             updated_plotting_list = []
             for plotting_data in plotting_list:
