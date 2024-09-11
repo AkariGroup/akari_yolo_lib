@@ -111,9 +111,14 @@ class OakdTrackingYolo(object):
         self.show_spatial_frame = show_spatial_frame
         self.show_orbit = show_orbit
         self.max_z = 15000  # [mm]
+        self.log = []
         if self.show_orbit:
             self.orbit_data_list = OrbitDataList(
+<<<<<<< HEAD
                 labels=self.labels, log_path=log_path, log_continue=log_continue
+=======
+                labels=self.labels,log_shared=self.log, log_path=log_path, log_continue=log_continue
+>>>>>>> 9d5e6cb (Fix shared log)
             )
         self._stack = contextlib.ExitStack()
         self._pipeline = self._create_pipeline()
@@ -863,6 +868,10 @@ class OrbitDataList(object):
     def __init__(
         self,
         labels: List[str],
+<<<<<<< HEAD
+=======
+        log_shared: Optional[List[LogJson]] = None,
+>>>>>>> 9d5e6cb (Fix shared log)
         log_path: Optional[str] = None,
         filtering: bool = True,
         log_continue: bool = False,
@@ -871,6 +880,7 @@ class OrbitDataList(object):
 
         Args:
             labels (List[str]): trackletsのlabel
+            log_shared (Optional[List[LogJson]]): 親クラスとログを共有する場合、ここで渡す。デフォルトはNone。
             log_path (Optional[str]): logを保存するパス。デフォルトはNone。
                                         Noneの場合はLogを保存しない。ディレクトリ名を与えた場合はディレクトリ直下に日付のファイルを新規作成。
                                         ファイル名を与えた場合、そのファイルが存在すればそのファイルの最終時刻から続けて記録し、保存。
@@ -889,6 +899,9 @@ class OrbitDataList(object):
         self.filtering = filtering
         self.file_name = None
         self.cur_id = 0
+        self.log_shared = None
+        if log_shared is not None:
+            self.log_shared = log_shared
         if log_path is not None and os.path.isfile(log_path):
             try:
                 json_open = open(log_path, "r")
@@ -1118,6 +1131,8 @@ class OrbitDataList(object):
             json_open = open(self.file_name, "r")
             log_file = ndjson.load(json_open)
             log_file.append(new_data)
+            if self.log_shared is not None:
+                self.log_shared.append(new_data)
             with open(self.file_name, mode="a", encoding="utf-8") as f:
                 writer = ndjson.writer(f)
                 writer.writerow(new_data)
