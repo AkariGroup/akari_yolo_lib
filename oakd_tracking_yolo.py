@@ -969,6 +969,13 @@ class OrbitDataList(object):
                 return data
         return None
 
+    def update_bird_frame_distance(self, distance: int) -> None:
+        """俯瞰フレームの距離方向の表示最大値を変更する。
+        Args:
+            distance (int): 最大距離[mm]。
+        """
+        self.max_z = distance
+
     def add_new_data(self, tracklet: Any) -> None:
         """trackletから新しいidのOrbitDataを作成
 
