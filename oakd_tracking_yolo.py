@@ -22,7 +22,6 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from .util import HostSync, TextHelper
 
 DISPLAY_WINDOW_SIZE_RATE = 2.0
-idColors = np.random.random(size=(1000, 3)) * 256
 
 
 class OakdTrackingYolo(object):
@@ -65,6 +64,8 @@ class OakdTrackingYolo(object):
         with Path(config_path).open() as f:
             config = json.load(f)
         nnConfig = config.get("nn_config", {})
+        self.ID_COLORS_SIZE = 100
+        self.id_colors = np.random.random(size=(self.ID_COLORS_SIZE, 3)) * 256
 
         # parse input shape
         if "input_size" in nnConfig:
@@ -193,6 +194,18 @@ class OakdTrackingYolo(object):
         )
         ans = arr_y @ arr_p @ cur_pos
         return ans
+
+    def get_color_from_id(self, id: int) -> Tuple[int]:
+        """IDに対応する色を取得する。
+
+        Args:
+            id (int): ID。
+
+        Returns:
+            Tuple[int]: 色のタプル。
+
+        """
+        return self.id_colors[id % self.ID_COLORS_SIZE]
 
     def get_labels(self) -> Any:
         """認識ラベルファイルから読み込んだラベルのリストを取得する。
@@ -489,7 +502,9 @@ class OakdTrackingYolo(object):
                     label = self.labels[tracklet.label]
                 except Exception:
                     label = tracklet.label
-                self.text.rectangle(frame, (x1, y1), (x2, y2), idColors[tracklet.id])
+                self.text.rectangle(
+                    frame, (x1, y1), (x2, y2), self.get_color_from_id(tracklet.id)
+                )
                 if disp_info:
                     self.text.put_text(frame, str(label), (x1 + 10, y1 + 20))
                     self.text.put_text(
@@ -649,7 +664,7 @@ class OakdTrackingYolo(object):
                         birds,
                         (point_x, point_y),
                         2,
-                        idColors[tracklets[i].id],
+                        self.get_color_from_id(tracklets[i].id),
                         thickness=5,
                         lineType=8,
                         shift=0,
@@ -667,7 +682,7 @@ class OakdTrackingYolo(object):
                                     birds,
                                     cur_point,
                                     2,
-                                    idColors[tracklets[i].id],
+                                    self.get_color_from_id(tracklets[i].id),
                                     thickness=2,
                                     lineType=8,
                                     shift=0,
@@ -677,7 +692,7 @@ class OakdTrackingYolo(object):
                                         birds,
                                         prev_point,
                                         cur_point,
-                                        idColors[tracklets[i].id],
+                                        self.get_color_from_id(tracklets[i].id),
                                         thickness=1,
                                     )
                                 prev_point = (
@@ -689,7 +704,7 @@ class OakdTrackingYolo(object):
                                     birds,
                                     prev_point,
                                     (point_x, point_y),
-                                    idColors[tracklets[i].id],
+                                    self.get_color_from_id(tracklets[i].id),
                                     2,
                                 )
 
@@ -821,9 +836,9 @@ class OakdTrackingYolo(object):
                     y = tracklets[i].spatialCoordinates.z / 1000
                     z = tracklets[i].spatialCoordinates.y / 1000
                     color = [
-                        idColors[tracklets[i].id][2] / 255,
-                        idColors[tracklets[i].id][1] / 255,
-                        idColors[tracklets[i].id][0] / 255,
+                        self.get_color_from_id(tracklets[i].id)[2] / 255,
+                        self.get_color_from_id(tracklets[i].id)[1] / 255,
+                        self.get_color_from_id(tracklets[i].id)[0] / 255,
                     ]
                     self.ax.scatter(x, y, z, color=color)
         plt.pause(0.001)
@@ -968,13 +983,6 @@ class OrbitDataList(object):
             if data.id == id:
                 return data
         return None
-
-    def update_bird_frame_distance(self, distance: int) -> None:
-        """俯瞰フレームの距離方向の表示最大値を変更する。
-        Args:
-            distance (int): 最大距離[mm]。
-        """
-        self.max_z = distance
 
     def add_new_data(self, tracklet: Any) -> None:
         """trackletから新しいidのOrbitDataを作成
@@ -1285,7 +1293,7 @@ class OrbitPlayer(OakdTrackingYolo):
                     birds,
                     (point_x, point_y),
                     2,
-                    idColors[data["id"]],
+                    self.get_color_from_id(data["id"]),
                     thickness=5,
                     lineType=8,
                     shift=0,
@@ -1296,7 +1304,7 @@ class OrbitPlayer(OakdTrackingYolo):
                     (point_x - 30, point_y - 10),
                     cv2.FONT_HERSHEY_TRIPLEX,
                     0.5,
-                    idColors[data["id"]],
+                    self.get_color_from_id(data["id"]),
                 )
                 prev_point = None
                 for i in range(0, cur_index):
@@ -1308,7 +1316,7 @@ class OrbitPlayer(OakdTrackingYolo):
                         birds,
                         cur_point,
                         2,
-                        idColors[data["id"]],
+                        self.get_color_from_id(data["id"]),
                         thickness=2,
                         lineType=8,
                         shift=0,
@@ -1318,7 +1326,7 @@ class OrbitPlayer(OakdTrackingYolo):
                             birds,
                             prev_point,
                             cur_point,
-                            idColors[data["id"]],
+                            self.get_color_from_id(data["id"]),
                             thickness=1,
                         )
                     prev_point = (
@@ -1330,7 +1338,7 @@ class OrbitPlayer(OakdTrackingYolo):
                         birds,
                         prev_point,
                         (point_x, point_y),
-                        idColors[data["id"]],
+                        self.get_color_from_id(data["id"]),
                         2,
                     )
         cv2.imshow("birds", birds)

@@ -15,7 +15,6 @@ import numpy as np
 from .util import HostSync, TextHelper
 
 DISPLAY_WINDOW_SIZE_RATE = 2.0
-idColors = np.random.random(size=(1000, 3)) * 256
 
 
 class OakdSpatialYolo(object):
@@ -49,6 +48,8 @@ class OakdSpatialYolo(object):
             config = json.load(f)
         nnConfig = config.get("nn_config", {})
 
+        self.ID_COLORS_SIZE = 100
+        self.id_colors = np.random.random(size=(self.ID_COLORS_SIZE, 3)) * 256
         self.width = 640
         self.height = 640
         # parse input shape
@@ -125,6 +126,18 @@ class OakdSpatialYolo(object):
     def close(self) -> None:
         """OAK-Dを閉じる。"""
         self._device.close()
+
+    def get_color_from_id(self, id: int) -> Tuple[int]:
+        """IDに対応する色を取得する。
+
+        Args:
+            id (int): ID。
+
+        Returns:
+            Tuple[int]: 色のタプル。
+
+        """
+        return self.id_colors[id % self.ID_COLORS_SIZE]
 
     def convert_to_pos_from_akari(self, pos: Any, pitch: float, yaw: float) -> Any:
         """入力されたAKARIのヘッドの向きに応じて、カメラからの三次元位置をAKARI正面からの位置に変換する。
@@ -412,7 +425,9 @@ class OakdSpatialYolo(object):
             except BaseException:
                 label = detection.label
                 print
-            self.text.rectangle(frame, (x1, y1), (x2, y2), idColors[detection.label])
+            self.text.rectangle(
+                frame, (x1, y1), (x2, y2), self.get_color_from_id(detection.label)
+            )
             if disp_info:
                 self.text.put_text(frame, str(label), (x1 + 10, y1 + 20))
                 self.text.put_text(
@@ -564,13 +579,13 @@ class OakdSpatialYolo(object):
                         (point_x - 30, point_y + 5),
                         cv2.FONT_HERSHEY_TRIPLEX,
                         0.5,
-                        idColors[detections[i].label],
+                        self.get_color_from_id(detections[i].label),
                     )
                 cv2.circle(
                     birds,
                     (point_x, point_y),
                     2,
-                    idColors[detections[i].label],
+                    self.get_color_from_id(detections[i].label),
                     thickness=5,
                     lineType=8,
                     shift=0,
