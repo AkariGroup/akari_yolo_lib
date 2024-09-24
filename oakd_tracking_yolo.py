@@ -281,7 +281,7 @@ class OakdTrackingYolo(object):
         spatialDetectionNetwork.input.setBlocking(False)
         spatialDetectionNetwork.setBoundingBoxScaleFactor(0.5)
         spatialDetectionNetwork.setDepthLowerThreshold(300)
-        spatialDetectionNetwork.setDepthUpperThreshold(35000)
+        spatialDetectionNetwork.setDepthUpperThreshold(15000)
 
         # Yolo specific parameters
         spatialDetectionNetwork.setNumClasses(self.classes)
