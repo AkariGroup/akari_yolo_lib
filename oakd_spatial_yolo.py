@@ -28,6 +28,7 @@ class OakdSpatialYolo(object):
         fov: float = 73.0,
         cam_debug: bool = False,
         robot_coordinate: bool = False,
+        track_targets: Optional[List[Union[int, str]]] = None,
         show_bird_frame: bool = True,
     ) -> None:
         """クラスの初期化メソッド。
@@ -39,6 +40,7 @@ class OakdSpatialYolo(object):
             fov (float): カメラの視野角 (degree)。defaultはOAK-D LiteのHFOVの73.0[deg]。
             cam_debug (bool, optional): カメラのデバッグ用ウィンドウを表示するかどうか。デフォルトはFalse。
             robot_coordinate (bool, optional): ロボットのヘッド向きを使って物体の位置を変換するかどうか。デフォルトはFalse。
+            track_targets (Optional[List[Union[int, str]]], optional): トラッキング対象のラベルリスト。デフォルトはNone。
             show_bird_frame (bool, optional): 俯瞰フレームを表示するかどうか。デフォルトはTrue。
 
         """
@@ -91,6 +93,14 @@ class OakdSpatialYolo(object):
         self.fps = fps
         self.fov = fov
         self.cam_debug = cam_debug
+        self.track_targets_list: List[int] = []
+        if track_targets is not None:
+            for target in track_targets:
+                if isinstance(target, int):
+                    self.track_targets_list.append(target)
+                elif isinstance(target, str):
+                    if target in self.labels:
+                        self.track_targets_list.append(self.labels.index(target))
         self.robot_coordinate = robot_coordinate
         self.show_bird_frame = show_bird_frame
         self.max_z = 15000  # [mm]
@@ -335,6 +345,13 @@ class OakdSpatialYolo(object):
         msgs = self.sync.get_msgs()
         if msgs is not None:
             detections = msgs["detections"].detections
+            # track_targetsが指定されている場合、指定されたラベルのみを検出結果に残す
+            if len(self.track_targets_list) > 0:
+                detections = [
+                    detection
+                    for detection in detections
+                    if detection.label in self.track_targets_list
+                ]
             frame = msgs["rgb"].getCvFrame()
             depthFrame = msgs["depth"].getFrame()
             self.raw_frame = msgs["raw"].getCvFrame()
