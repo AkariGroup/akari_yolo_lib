@@ -1,12 +1,10 @@
 #!/usr/bin/env python
 
-import contextlib
 import json
 import time
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
 
-import blobconverter
 import cv2
 import depthai as dai
 import numpy as np
@@ -27,6 +25,7 @@ class OakdYolo(object):
         Args:
             config_path (str): 認識ラベルファイルのパス。
             model_path (str): 認識モデルファイルのパス。
+                NNArchive (.tar.xz) またはModel Zoo名を指定可能。
             fps (int, optional): カメラのフレームレート。デフォルトは10。
 
         """
@@ -58,29 +57,23 @@ class OakdYolo(object):
         self.labels = nnMappings.get("labels", {})
 
         self.nn_path = Path(model_path)
-        # get model path
         if not self.nn_path.exists():
             print(
                 "No blob found at {}. Looking into DepthAI model zoo.".format(
                     self.nn_path
                 )
             )
-            self.nn_path = Path(
-                blobconverter.from_zoo(
-                    model_path, shaves=6, zoo_type="depthai", use_cache=True
-                )
-            )
+            self._model_type = "zoo"
+            self._model_zoo_name = model_path
+        elif self.nn_path.suffix == ".blob":
+            self._model_type = "blob"
+        else:
+            # .tar.xz (NNArchive) or other archive formats
+            self._model_type = "archive"
 
-        self._stack = contextlib.ExitStack()
-        self._pipeline = self._create_pipeline()
-        self._device = self._stack.enter_context(
-            dai.Device(self._pipeline, usb2Mode=True)
-        )
-        # Output queues will be used to get the rgb frames and nn data from the outputs defined above
-        self.qControl = self._device.getInputQueue("control")
-        self.qRgb = self._device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
-        self.qRaw = self._device.getOutputQueue(name="raw")
-        self.qDet = self._device.getOutputQueue(name="nn", maxSize=4, blocking=False)
+        self._pipeline = dai.Pipeline()
+        self._create_pipeline()
+        self._pipeline.start()
         self.counter = 0
         self.start_time = time.monotonic()
         self.frame_name = 0
@@ -91,7 +84,7 @@ class OakdYolo(object):
 
     def close(self) -> None:
         """OAK-Dを閉じる。"""
-        self._device.close()
+        self._pipeline.stop()
 
     def set_camera_brightness(self, brightness: int) -> None:
         """カメラの明るさを設定する。
@@ -113,59 +106,49 @@ class OakdYolo(object):
         """
         return self.labels
 
-    def _create_pipeline(self) -> dai.Pipeline:
-        """OAK-Dのパイプラインを作成する。
-
-        Returns:
-            dai.Pipeline: OAK-Dのパイプライン。
-
-        """
-        pipeline = dai.Pipeline()
+    def _create_pipeline(self) -> None:
+        """OAK-Dのパイプラインを作成する。"""
+        pipeline = self._pipeline
 
         # Define sources and outputs
-        controlIn = pipeline.create(dai.node.XLinkIn)
-        camRgb = pipeline.create(dai.node.ColorCamera)
-        detectionNetwork = pipeline.create(dai.node.YoloDetectionNetwork)
-        xoutRgb = pipeline.create(dai.node.XLinkOut)
-        xoutNn = pipeline.create(dai.node.XLinkOut)
-        controlIn.setStreamName("control")
-        xoutRgb.setStreamName("rgb")
-        xoutNn.setStreamName("nn")
+        camRgb = pipeline.create(dai.node.Camera).build(
+            boardSocket=dai.CameraBoardSocket.CAM_A
+        )
 
-        # Properties
-        controlIn.out.link(camRgb.inputControl)
-        camRgb.setPreviewKeepAspectRatio(False)
-        camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
-        camRgb.setInterleaved(False)
-        camRgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
-        camRgb.setPreviewSize(1920, 1080)
+        detectionNetwork = pipeline.create(dai.node.DetectionNetwork)
+
+        # Camera properties
         camRgb.setFps(self.fps)
 
-        xoutRaw = pipeline.create(dai.node.XLinkOut)
-        xoutRaw.setStreamName("raw")
-        camRgb.video.link(xoutRaw.input)
+        # Camera outputs
+        rgbOut = camRgb.requestOutput((1920, 1080), dai.ImgFrame.Type.BGR888p)
+        rawOut = camRgb.requestOutput((1920, 1080), dai.ImgFrame.Type.BGR888p)
 
+        # Use ImageManip to resize with letterboxing
         manip = pipeline.create(dai.node.ImageManip)
-        manip.setMaxOutputFrameSize(self.width * self.height * 3)  # 640x640x3
-        manip.initialConfig.setResizeThumbnail(self.width, self.height)
-        camRgb.preview.link(manip.inputImage)
+        manip.setOutputSize(
+            self.width, self.height, dai.ImageManipConfig.ResizeMode.LETTERBOX
+        )
+        rgbOut.link(manip.inputImage)
 
         # Network specific settings
-        detectionNetwork.setConfidenceThreshold(self.confidenceThreshold)
-        detectionNetwork.setNumClasses(self.classes)
-        detectionNetwork.setCoordinateSize(self.coordinates)
-        detectionNetwork.setAnchors(self.anchors)
-        detectionNetwork.setAnchorMasks(self.anchorMasks)
-        detectionNetwork.setIouThreshold(self.iouThreshold)
-        detectionNetwork.setBlobPath(self.nn_path)
-        detectionNetwork.setNumInferenceThreads(2)
-        detectionNetwork.input.setBlocking(False)
+        if self._model_type == "zoo":
+            nn_description = dai.NNModelDescription(self._model_zoo_name)
+            detectionNetwork.build(manip.out, nn_description)
+        elif self._model_type == "blob":
+            detectionNetwork.setBlobPath(str(self.nn_path))
+            manip.out.link(detectionNetwork.input)
+        else:
+            nn_archive = dai.NNArchive(str(self.nn_path))
+            detectionNetwork.build(manip.out, nn_archive)
 
-        # Linking
-        manip.out.link(detectionNetwork.input)
-        detectionNetwork.passthrough.link(xoutRgb.input)
-        detectionNetwork.out.link(xoutNn.input)
-        return pipeline
+        detectionNetwork.setConfidenceThreshold(self.confidenceThreshold)
+
+        # Create output queues
+        self.qControl = camRgb.inputControl.createInputQueue()
+        self.qRgb = detectionNetwork.passthrough.createOutputQueue()
+        self.qRaw = rawOut.createOutputQueue()
+        self.qDet = detectionNetwork.out.createOutputQueue()
 
     def frame_norm(self, frame: np.ndarray, bbox: Tuple[float]) -> List[int]:
         """画像フレーム内のbounding boxの座標をフレームサイズで正規化する。

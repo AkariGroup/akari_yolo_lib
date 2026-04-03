@@ -1,13 +1,11 @@
 #!/usr/bin/env python
 
-import contextlib
 import json
 import math
 import time
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Union
 
-import blobconverter
 import cv2
 import depthai as dai
 import numpy as np
@@ -35,6 +33,7 @@ class OakdSpatialYolo(object):
         Args:
             config_path (str): YOLOモデルの設定ファイルのパス。
             model_path (str): YOLOモデルファイルのパス。
+                NNArchive (.tar.xz) またはModel Zoo名を指定可能。
             fps (int): カメラのフレームレート。
             fov (float): カメラの視野角 (degree)。defaultはOAK-D LiteのHFOVの73.0[deg]。
             cam_debug (bool, optional): カメラのデバッグ用ウィンドウを表示するかどうか。デフォルトはFalse。
@@ -76,34 +75,31 @@ class OakdSpatialYolo(object):
         self.labels = nnMappings.get("labels", {})
 
         self.nn_path = Path(model_path)
-        # get model path
         if not self.nn_path.exists():
             print(
                 "No blob found at {}. Looking into DepthAI model zoo.".format(
                     self.nn_path
                 )
             )
-            self.nn_path = Path(
-                blobconverter.from_zoo(
-                    model_path, shaves=6, zoo_type="depthai", use_cache=True
-                )
-            )
+            self._model_type = "zoo"
+            self._model_zoo_name = model_path
+        elif self.nn_path.suffix == ".blob":
+            self._model_type = "blob"
+        else:
+            # .tar.xz (NNArchive) or other archive formats
+            self._model_type = "archive"
+
         self.fps = fps
         self.fov = fov
         self.cam_debug = cam_debug
         self.robot_coordinate = robot_coordinate
         self.show_bird_frame = show_bird_frame
         self.max_z = 15000  # [mm]
-        self._stack = contextlib.ExitStack()
-        self._pipeline = self._create_pipeline()
-        self._device = self._stack.enter_context(dai.Device(self._pipeline))
-        # Output queues will be used to get the rgb frames and nn data from the outputs defined above
-        self.qRgb = self._device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
-        self.qDet = self._device.getOutputQueue(name="nn", maxSize=4, blocking=False)
-        self.qRaw = self._device.getOutputQueue(name="raw", maxSize=4, blocking=False)
-        self.qDepth = self._device.getOutputQueue(
-            name="depth", maxSize=4, blocking=False
-        )
+
+        self._pipeline = dai.Pipeline()
+        self._create_pipeline()
+        self._pipeline.start()
+
         self.counter = 0
         self.startTime = time.monotonic()
         self.frame_name = 0
@@ -125,7 +121,7 @@ class OakdSpatialYolo(object):
 
     def close(self) -> None:
         """OAK-Dを閉じる。"""
-        self._device.close()
+        self._pipeline.stop()
 
     def get_color_from_id(self, id: int) -> Tuple[int]:
         """IDに対応する色を取得する。
@@ -184,93 +180,70 @@ class OakdSpatialYolo(object):
         """
         return self.labels
 
-    def _create_pipeline(self) -> dai.Pipeline:
-        """OAK-Dのパイプラインを作成する。
+    def _create_pipeline(self) -> None:
+        """OAK-Dのパイプラインを作成する。"""
+        pipeline = self._pipeline
 
-        Returns:
-            dai.Pipeline: OAK-Dのパイプライン。
-
-        """
-        # Create pipeline
-        pipeline = dai.Pipeline()
-        device = dai.Device()
-
-        # Define sources and outputs
-        camRgb = pipeline.create(dai.node.ColorCamera)
-        camRgb.setPreviewKeepAspectRatio(False)
-
-        spatialDetectionNetwork = pipeline.create(dai.node.YoloSpatialDetectionNetwork)
-        monoLeft = pipeline.create(dai.node.MonoCamera)
-        monoRight = pipeline.create(dai.node.MonoCamera)
+        # Define sources
+        camRgb = pipeline.create(dai.node.Camera).build(
+            boardSocket=dai.CameraBoardSocket.CAM_A
+        )
+        monoLeft = pipeline.create(dai.node.Camera).build(
+            boardSocket=dai.CameraBoardSocket.LEFT
+        )
+        monoRight = pipeline.create(dai.node.Camera).build(
+            boardSocket=dai.CameraBoardSocket.RIGHT
+        )
         stereo = pipeline.create(dai.node.StereoDepth)
 
-        xoutRgb = pipeline.create(dai.node.XLinkOut)
-        xoutRgb.setStreamName("rgb")
-
-        # Properties
-        camRgb.setBoardSocket(dai.CameraBoardSocket.CAM_A)
-        camRgb.setPreviewSize(1920, 1080)
-        camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
-        camRgb.setInterleaved(False)
-        camRgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
+        # Camera properties
         camRgb.setFps(self.fps)
-        try:
-            calibData = device.readCalibration2()
-            lensPosition = calibData.getLensPosition(dai.CameraBoardSocket.CAM_A)
-            if lensPosition:
-                camRgb.initialControl.setManualFocus(lensPosition)
-        except BaseException:
-            raise
-        # Use ImageMqnip to resize with letterboxing
-        manip = pipeline.create(dai.node.ImageManip)
-        manip.setMaxOutputFrameSize(self.width * self.height * 3)
-        manip.initialConfig.setResizeThumbnail(self.width, self.height)
-        camRgb.preview.link(manip.inputImage)
+        monoLeft.setFps(self.fps)
+        monoRight.setFps(self.fps)
 
-        monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_480_P)
-        monoLeft.setBoardSocket(dai.CameraBoardSocket.LEFT)
-        monoRight.setResolution(dai.MonoCameraProperties.SensorResolution.THE_480_P)
-        monoRight.setBoardSocket(dai.CameraBoardSocket.RIGHT)
-
-        # setting node configs
+        # Stereo setup
+        monoLeftOut = monoLeft.requestOutput((640, 480), dai.ImgFrame.Type.GRAY8)
+        monoRightOut = monoRight.requestOutput((640, 480), dai.ImgFrame.Type.GRAY8)
+        monoLeftOut.link(stereo.left)
+        monoRightOut.link(stereo.right)
         stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_DENSITY)
         stereo.setLeftRightCheck(True)
-        stereo.setDepthAlign(dai.CameraBoardSocket.RGB)
-        monoLeft.out.link(stereo.left)
-        monoRight.out.link(stereo.right)
-        monoRight.setFps(self.fps)
-        monoLeft.setFps(self.fps)
+        stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)
 
-        spatialDetectionNetwork.setBlobPath(self.nn_path)
+        # Use ImageManip to resize with letterboxing
+        rgbOut = camRgb.requestOutput((1920, 1080), dai.ImgFrame.Type.BGR888p)
+        manip = pipeline.create(dai.node.ImageManip)
+        manip.setOutputSize(
+            self.width, self.height, dai.ImageManipConfig.ResizeMode.LETTERBOX
+        )
+        rgbOut.link(manip.inputImage)
+
+        # Spatial Detection Network
+        spatialDetectionNetwork = pipeline.create(dai.node.SpatialDetectionNetwork)
+        if self._model_type == "zoo":
+            nn_description = dai.NNModelDescription(self._model_zoo_name)
+            spatialDetectionNetwork.build(manip.out, stereo, nn_description)
+        elif self._model_type == "blob":
+            spatialDetectionNetwork.setBlobPath(str(self.nn_path))
+            manip.out.link(spatialDetectionNetwork.input)
+            stereo.depth.link(spatialDetectionNetwork.inputDepth)
+        else:
+            nn_archive = dai.NNArchive(str(self.nn_path))
+            spatialDetectionNetwork.build(manip.out, stereo, nn_archive)
+
         spatialDetectionNetwork.setConfidenceThreshold(self.confidenceThreshold)
-        spatialDetectionNetwork.input.setBlocking(False)
         spatialDetectionNetwork.setBoundingBoxScaleFactor(0.5)
         spatialDetectionNetwork.setDepthLowerThreshold(300)
         spatialDetectionNetwork.setDepthUpperThreshold(35000)
 
-        # Yolo specific parameters
-        spatialDetectionNetwork.setNumClasses(self.classes)
-        spatialDetectionNetwork.setCoordinateSize(self.coordinates)
-        spatialDetectionNetwork.setAnchors(self.anchors)
-        spatialDetectionNetwork.setAnchorMasks(self.anchorMasks)
-        spatialDetectionNetwork.setIouThreshold(self.iouThreshold)
+        # Raw output
+        rawOut = camRgb.requestOutput((1920, 1080), dai.ImgFrame.Type.BGR888p)
 
-        manip.out.link(spatialDetectionNetwork.input)
-        spatialDetectionNetwork.passthrough.link(xoutRgb.input)
-        stereo.depth.link(spatialDetectionNetwork.inputDepth)
-
-        xoutNn = pipeline.create(dai.node.XLinkOut)
-        xoutNn.setStreamName("nn")
-        spatialDetectionNetwork.out.link(xoutNn.input)
-
-        xoutRaw = pipeline.create(dai.node.XLinkOut)
-        xoutRaw.setStreamName("raw")
-        camRgb.video.link(xoutRaw.input)
-
-        xoutDepth = pipeline.create(dai.node.XLinkOut)
-        xoutDepth.setStreamName("depth")
-        spatialDetectionNetwork.passthroughDepth.link(xoutDepth.input)
-        return pipeline
+        # Create output queues
+        self.qRgb = spatialDetectionNetwork.passthrough.createOutputQueue()
+        self.qDet = spatialDetectionNetwork.out.createOutputQueue()
+        self.qRaw = rawOut.createOutputQueue()
+        self.qDepth = spatialDetectionNetwork.passthroughDepth.createOutputQueue()
 
     def frame_norm(self, frame: np.ndarray, bbox: Tuple[float]) -> List[int]:
         """画像フレーム内のbounding boxの座標をフレームサイズで正規化する。
