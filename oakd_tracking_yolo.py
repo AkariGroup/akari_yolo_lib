@@ -49,14 +49,24 @@ class OakdTrackingYolo(object):
             model_path (str): YOLOモデルファイルのパス。
             fps (int): カメラのフレームレート。
             fov (float): カメラの視野角 (degree)。defaultはOAK-D LiteのHFOVの73.0[deg]
-            cam_debug (bool, optional): カメラのデバッグ用ウィンドウを表示するかどうか。デフォルトはFalse。
-            robot_coordinate (bool, optional): ロボットのヘッド向きを使って物体の位置を変換するかどうか。デフォルトはFalse。
-            track_targets (Optional[List[Union[int, str]]], optional): トラッキング対象のラベルリスト。デフォルトはNone。
-            show_bird_frame (bool, optional): 俯瞰フレームを表示するかどうか。デフォルトはTrue。
-            show_spatial_frame (bool, optional): 3次元フレームを表示するかどうか。デフォルトはFalse。
-            show_orbit (bool, optional): 3次元軌道を表示するかどうか。デフォルトはFalse。
-            log_path (Optional[str], optional): 物体の軌道履歴を保存するパス。show_orbitがTrueの時のみ有効。
-            log_continue(bool): log_pathでファイルを指定した際に、軌道履歴をログの最終時刻から継続するかどうか。デフォルトはFalse。
+            cam_debug (bool, optional): カメラのデバッグ用ウィンドウを
+                表示するかどうか。デフォルトはFalse。
+            robot_coordinate (bool, optional): ロボットのヘッド向きを
+                使って物体の位置を変換するかどうか。
+                デフォルトはFalse。
+            track_targets (Optional[List[Union[int, str]]], optional):
+                トラッキング対象のラベルリスト。デフォルトはNone。
+            show_bird_frame (bool, optional): 俯瞰フレームを表示する
+                かどうか。デフォルトはTrue。
+            show_spatial_frame (bool, optional): 3次元フレームを表示
+                するかどうか。デフォルトはFalse。
+            show_orbit (bool, optional): 3次元軌道を表示するかどうか。
+                デフォルトはFalse。
+            log_path (Optional[str], optional): 物体の軌道履歴を保存
+                するパス。show_orbitがTrueの時のみ有効。
+            log_continue(bool): log_pathでファイルを指定した際に、
+                軌道履歴をログの最終時刻から継続するかどうか。
+                デフォルトはFalse。
 
         """
         if not Path(config_path).exists():
@@ -303,9 +313,11 @@ class OakdTrackingYolo(object):
                     if target in self.labels:
                         target_list.append(self.labels.index(target))
             objectTracker.setDetectionLabelsToTrack(target_list)
-        # possible tracking types: ZERO_TERM_COLOR_HISTOGRAM, ZERO_TERM_IMAGELESS, SHORT_TERM_IMAGELESS, SHORT_TERM_KCF
+        # possible tracking types: ZERO_TERM_COLOR_HISTOGRAM,
+        # ZERO_TERM_IMAGELESS, SHORT_TERM_IMAGELESS, SHORT_TERM_KCF
         objectTracker.setTrackerType(dai.TrackerType.ZERO_TERM_COLOR_HISTOGRAM)
-        # take the smallest ID when new object is tracked, possible options: SMALLEST_ID, UNIQUE_ID
+        # take the smallest ID when new object is tracked,
+        # possible options: SMALLEST_ID, UNIQUE_ID
         objectTracker.setTrackerIdAssignmentPolicy(
             dai.TrackerIdAssignmentPolicy.UNIQUE_ID
         )
@@ -482,8 +494,11 @@ class OakdTrackingYolo(object):
         Args:
             frame (np.ndarray): 画像フレーム。
             tracklets (List[Any]): トラッキング結果のリスト。
-            id (Optional[int], optional): 描画するオブジェクトのID。指定すると、そのIDのみを描画した画像フレームを返す。指定しない場合は全てのオブジェクトを描画する。
-            disp_info (bool, optional): クラス名とconfidenceをフレーム内に表示するかどうか。デフォルトはFalse。
+            id (Optional[int], optional): 描画するオブジェクトのID。
+                指定すると、そのIDのみを描画した画像フレームを返す。
+                指定しない場合は全てのオブジェクトを描画する。
+            disp_info (bool, optional): クラス名とconfidenceを
+                フレーム内に表示するかどうか。デフォルトはFalse。
 
         Returns:
             np.ndarray: 描画された画像フレーム。
@@ -890,14 +905,23 @@ class OrbitDataList(object):
         """クラスの初期化メソッド。
 
         Args:
-            oakd_tracking_yolo (OakdTrackingYolo): トラッキング結果を取得するためのオブジェクト。
+            oakd_tracking_yolo (OakdTrackingYolo): トラッキング結果を
+                取得するためのオブジェクト。
             labels (List[str]): trackletsのlabel
-            log_shared (Optional[List[LogJson]]): 親クラスとログを共有する場合、ここで渡す。デフォルトはNone。
-            log_path (Optional[str]): logを保存するパス。デフォルトはNone。
-                                        Noneの場合はLogを保存しない。ディレクトリ名を与えた場合はディレクトリ直下に日付のファイルを新規作成。
-                                        ファイル名を与えた場合、そのファイルが存在すればそのファイルの最終時刻から続けて記録し、保存。
-            filtering (bool): 位置情報のフィルタリングを行うかどうか。デフォルトはTrue。
-            log_continue(bool): log_pathでファイルを指定した際に、軌道履歴をログの最終時刻から継続するかどうか。デフォルトはFalse。
+            log_shared (Optional[List[LogJson]]): 親クラスとログを
+                共有する場合、ここで渡す。デフォルトはNone。
+            log_path (Optional[str]): logを保存するパス。
+                デフォルトはNone。
+                Noneの場合はLogを保存しない。
+                ディレクトリ名を与えた場合はディレクトリ直下に
+                日付のファイルを新規作成。
+                ファイル名を与えた場合、そのファイルが存在すれば
+                そのファイルの最終時刻から続けて記録し、保存。
+            filtering (bool): 位置情報のフィルタリングを行うかどうか。
+                デフォルトはTrue。
+            log_continue(bool): log_pathでファイルを指定した際に、
+                軌道履歴をログの最終時刻から継続するかどうか。
+                デフォルトはFalse。
         """
         self.oakd_tracking_yolo = oakd_tracking_yolo
         self.LOGGING_INTEREVAL = 0.5
@@ -1061,7 +1085,8 @@ class OrbitDataList(object):
         weighted_sum_z = 0.0
         for log in pos_logs:
             # 時間差に基づいた重みを計算（時間差が小さいほど重みが大きくなる）
-            weight = 1 / (abs(log.time - target_time) + 1e-9)  # ゼロ除算を避けるための微小値
+            # ゼロ除算を避けるための微小値
+            weight = 1 / (abs(log.time - target_time) + 1e-9)
             total_weight += weight
             weighted_sum_x += log.x * weight
             weighted_sum_y += log.y * weight
@@ -1168,7 +1193,8 @@ class OrbitPlayer(OakdTrackingYolo):
         Args:
             log_path (str): ログファイルのパス
             speed (float, optional): 再生速度 (1.0 が等速). デフォルトは 1.0.
-            fov (float, optional): 俯瞰マップ上に描画されるOAK-Dの視野角 (度). デフォルトは 73.0 度.
+            fov (float, optional): 俯瞰マップ上に描画される
+                OAK-Dの視野角 (度). デフォルトは 73.0 度.
             max_z (float, optional): 俯瞰マップの最大Z座標値. デフォルトは 15000.
 
         Raises:

@@ -1,6 +1,7 @@
 import math
-import numpy as np
+
 import depthai as dai
+import numpy as np
 
 
 class HostSpatialsCalc:
@@ -15,7 +16,8 @@ class HostSpatialsCalc:
         Args:
             device (depthai.Device): DepthAIデバイスの情報。
             fov (float, optional): DepthAIカメラの水平視野角。デフォルトはNone。
-            delta (int, optional): depthの平均を計算する上下左右周辺フレームの幅。デフォルトは5。
+            delta (int, optional): depthの平均を計算する
+                上下左右周辺フレームの幅。デフォルトは5。
             thresh_low (int, optional): ROIの深度の下限[cm]。デフォルトは200。
             thresh_high (int, optional): ROIの深度の上限[cm]。デフォルトは30000。
         """
@@ -103,7 +105,8 @@ class HostSpatialsCalc:
         Args:
             depthFrame (np.ndarray): 深度フレーム。
             roi (tuple): ROI (xmin, ymin, xmax, ymax) またはポイント (x, y)。
-            averaging_method (function, optional): ROI内の深度を平均化するメソッド。デフォルトはnp.mean。
+            averaging_method (function, optional): ROI内の深度を
+                平均化するメソッド。デフォルトはnp.mean。
 
         Returns:
             tuple: (空間座標のタプル(x, y, z), ROIの中心点のタプル (x,y))。

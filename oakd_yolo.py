@@ -76,7 +76,8 @@ class OakdYolo(object):
         self._device = self._stack.enter_context(
             dai.Device(self._pipeline, usb2Mode=True)
         )
-        # Output queues will be used to get the rgb frames and nn data from the outputs defined above
+        # Output queues will be used to get the rgb frames
+        # and nn data from the outputs defined above
         self.qControl = self._device.getInputQueue("control")
         self.qRgb = self._device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
         self.qRaw = self._device.getOutputQueue(name="raw")
@@ -236,8 +237,11 @@ class OakdYolo(object):
         Args:
             frame (np.ndarray): 画像フレーム。
             detections (List[Any]): 検出結果のリスト。
-            id (Optional[int], optional): 描画するオブジェクトのID。指定すると、そのIDのみを描画した画像フレームを返す。指定しない場合は全てのオブジェクトを描画する。
-            disp_info (bool, optional): クラス名とconfidenceをフレーム内に表示するかどうか。デフォルトはFalse。
+            id (Optional[int], optional): 描画するオブジェクトのID。
+                指定すると、そのIDのみを描画した画像フレームを返す。
+                指定しない場合は全てのオブジェクトを描画する。
+            disp_info (bool, optional): クラス名とconfidenceを
+                フレーム内に表示するかどうか。デフォルトはFalse。
 
         Returns:
             np.ndarray: 描画された画像フレーム。

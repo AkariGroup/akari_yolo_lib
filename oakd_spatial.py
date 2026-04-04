@@ -29,8 +29,11 @@ class OakdSpatial(object):
         Args:
             fps (int): カメラのフレームレート。
             fov (float): カメラの視野角 (degree)。defaultはOAK-D LiteのHFOVの73.0[deg]。
-            cam_debug (bool, optional): カメラのデバッグ用ウィンドウを表示するかどうか。デフォルトはFalse。
-            robot_coordinate (bool, optional): ロボットのヘッド向きを使って物体の位置を変換するかどうか。デフォルトはFalse。
+            cam_debug (bool, optional): カメラのデバッグ用ウィンドウを
+                表示するかどうか。デフォルトはFalse。
+            robot_coordinate (bool, optional): ロボットのヘッド向きを
+                使って物体の位置を変換するかどうか。
+                デフォルトはFalse。
 
         """
 
@@ -54,7 +57,8 @@ class OakdSpatial(object):
             self._device, fov=self.fov, delta=spatial_delta
         )
         self.host_spatials.setDeltaRoi(spatial_delta)
-        # Output queues will be used to get the rgb frames and nn data from the outputs defined above
+        # Output queues will be used to get the rgb frames
+        # and nn data from the outputs defined above
         self.qRaw = self._device.getOutputQueue(name="raw", maxSize=4, blocking=False)
         self.qDepth = self._device.getOutputQueue(
             name="depth", maxSize=4, blocking=False
@@ -205,7 +209,8 @@ class OakdSpatial(object):
         """フレーム画像と検出結果を取得する。
 
         Returns:
-            Union[np.ndarray, np.ndarray,float]: RGBフレーム,depthフレーム,タイムスタンプのタプル。
+            Union[np.ndarray, np.ndarray, float]:
+                RGBフレーム,depthフレーム,タイムスタンプのタプル。
 
         """
         frame = None

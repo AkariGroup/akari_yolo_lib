@@ -38,10 +38,15 @@ class OakdSpatialYolo(object):
             model_path (str): YOLOモデルファイルのパス。
             fps (int): カメラのフレームレート。
             fov (float): カメラの視野角 (degree)。defaultはOAK-D LiteのHFOVの73.0[deg]。
-            cam_debug (bool, optional): カメラのデバッグ用ウィンドウを表示するかどうか。デフォルトはFalse。
-            robot_coordinate (bool, optional): ロボットのヘッド向きを使って物体の位置を変換するかどうか。デフォルトはFalse。
-            track_targets (Optional[List[Union[int, str]]], optional): トラッキング対象のラベルリスト。デフォルトはNone。
-            show_bird_frame (bool, optional): 俯瞰フレームを表示するかどうか。デフォルトはTrue。
+            cam_debug (bool, optional): カメラのデバッグ用ウィンドウを
+                表示するかどうか。デフォルトはFalse。
+            robot_coordinate (bool, optional): ロボットのヘッド向きを
+                使って物体の位置を変換するかどうか。
+                デフォルトはFalse。
+            track_targets (Optional[List[Union[int, str]]], optional):
+                トラッキング対象のラベルリスト。デフォルトはNone。
+            show_bird_frame (bool, optional): 俯瞰フレームを表示する
+                かどうか。デフォルトはTrue。
 
         """
         if not Path(config_path).exists():
@@ -107,7 +112,8 @@ class OakdSpatialYolo(object):
         self._stack = contextlib.ExitStack()
         self._pipeline = self._create_pipeline()
         self._device = self._stack.enter_context(dai.Device(self._pipeline))
-        # Output queues will be used to get the rgb frames and nn data from the outputs defined above
+        # Output queues will be used to get the rgb frames
+        # and nn data from the outputs defined above
         self.qRgb = self._device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
         self.qDet = self._device.getOutputQueue(name="nn", maxSize=4, blocking=False)
         self.qRaw = self._device.getOutputQueue(name="raw", maxSize=4, blocking=False)
@@ -413,8 +419,11 @@ class OakdSpatialYolo(object):
         Args:
             frame (np.ndarray): 画像フレーム。
             detections (List[Any]): 検出結果のリスト。
-            id (Optional[int], optional): 描画するオブジェクトのID。指定すると、そのIDのみを描画した画像フレームを返す。指定しない場合は全てのオブジェクトを描画する。
-            disp_info (bool, optional): クラス名とconfidenceをフレーム内に表示するかどうか。デフォルトはFalse。
+            id (Optional[int], optional): 描画するオブジェクトのID。
+                指定すると、そのIDのみを描画した画像フレームを返す。
+                指定しない場合は全てのオブジェクトを描画する。
+            disp_info (bool, optional): クラス名とconfidenceを
+                フレーム内に表示するかどうか。デフォルトはFalse。
 
         Returns:
             np.ndarray: 描画された画像フレーム。
