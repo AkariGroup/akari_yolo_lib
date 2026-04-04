@@ -19,7 +19,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from .util import HostSync, TextHelper
 
-DISPLAY_WINDOW_SIZE_RATE = 2.0
+DISPLAY_WINDOW_SIZE_RATE = 0.5
 
 
 class OakdTrackingYolo(object):
@@ -227,40 +227,41 @@ class OakdTrackingYolo(object):
         stereo = pipeline.create(dai.node.StereoDepth)
         objectTracker = pipeline.create(dai.node.ObjectTracker)
 
-        # Camera properties
-        camRgb.setFps(self.fps)
-        monoLeft.setFps(self.fps)
-        monoRight.setFps(self.fps)
-
         # Stereo setup
-        monoLeftOut = monoLeft.requestOutput((640, 480), dai.ImgFrame.Type.GRAY8)
-        monoRightOut = monoRight.requestOutput((640, 480), dai.ImgFrame.Type.GRAY8)
+        monoLeftOut = monoLeft.requestOutput(
+            (640, 480), dai.ImgFrame.Type.GRAY8, fps=self.fps
+        )
+        monoRightOut = monoRight.requestOutput(
+            (640, 480), dai.ImgFrame.Type.GRAY8, fps=self.fps
+        )
         monoLeftOut.link(stereo.left)
         monoRightOut.link(stereo.right)
-        stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_DENSITY)
+        stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_DETAIL)
         stereo.setLeftRightCheck(True)
         stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)
-
-        # Use ImageManip to resize with letterboxing
-        rgbOut = camRgb.requestOutput((1920, 1080), dai.ImgFrame.Type.BGR888p)
-        manip = pipeline.create(dai.node.ImageManip)
-        manip.setOutputSize(
-            self.width, self.height, dai.ImageManipConfig.ResizeMode.LETTERBOX
-        )
-        rgbOut.link(manip.inputImage)
 
         # Spatial Detection Network
         spatialDetectionNetwork = pipeline.create(dai.node.SpatialDetectionNetwork)
         if self._model_type == "zoo":
             nn_description = dai.NNModelDescription(self._model_zoo_name)
-            spatialDetectionNetwork.build(manip.out, stereo, nn_description)
-        elif self._model_type == "blob":
-            spatialDetectionNetwork.setBlobPath(str(self.nn_path))
-            manip.out.link(spatialDetectionNetwork.input)
-            stereo.depth.link(spatialDetectionNetwork.inputDepth)
+            spatialDetectionNetwork.build(camRgb, stereo, nn_description, fps=self.fps)
         else:
-            nn_archive = dai.NNArchive(str(self.nn_path))
-            spatialDetectionNetwork.build(manip.out, stereo, nn_archive)
+            # Use ImageManip to resize with letterboxing (non-zoo only)
+            rgbOut = camRgb.requestOutput(
+                (1920, 1080), dai.ImgFrame.Type.BGR888p, fps=self.fps
+            )
+            manip = pipeline.create(dai.node.ImageManip)
+            manip.initialConfig.setOutputSize(
+                self.width, self.height, dai.ImageManipConfig.ResizeMode.LETTERBOX
+            )
+            rgbOut.link(manip.inputImage)
+            if self._model_type == "blob":
+                spatialDetectionNetwork.setBlobPath(str(self.nn_path))
+                manip.out.link(spatialDetectionNetwork.input)
+                stereo.depth.link(spatialDetectionNetwork.inputDepth)
+            else:
+                nn_archive = dai.NNArchive(str(self.nn_path))
+                spatialDetectionNetwork.build(manip.out, stereo, nn_archive)
 
         spatialDetectionNetwork.setConfidenceThreshold(self.confidenceThreshold)
         spatialDetectionNetwork.setBoundingBoxScaleFactor(0.5)
@@ -294,10 +295,15 @@ class OakdTrackingYolo(object):
         spatialDetectionNetwork.out.link(objectTracker.inputDetections)
 
         # Raw output
-        rawOut = camRgb.requestOutput((1920, 1080), dai.ImgFrame.Type.BGR888p)
+        rawOut = camRgb.requestOutput(
+            (1920, 1080), dai.ImgFrame.Type.BGR888p, fps=self.fps
+        )
 
         # Create output queues
-        self.qRgb = objectTracker.passthroughTrackerFrame.createOutputQueue()
+        if self._model_type == "zoo":
+            self.qRgb = rawOut.createOutputQueue()
+        else:
+            self.qRgb = objectTracker.passthroughTrackerFrame.createOutputQueue()
         self.qDet = spatialDetectionNetwork.out.createOutputQueue()
         self.qRaw = rawOut.createOutputQueue()
         self.qDepth = spatialDetectionNetwork.passthroughDepth.createOutputQueue()
@@ -392,7 +398,7 @@ class OakdTrackingYolo(object):
                 )
             height = int(frame.shape[1] * 9 / 16)
             width = frame.shape[1]
-            brank_height = width - height
+            brank_height = frame.shape[0] - height
             frame = frame[
                 int(brank_height / 2) : int(frame.shape[0] - brank_height / 2),
                 0:width,

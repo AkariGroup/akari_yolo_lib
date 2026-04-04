@@ -10,7 +10,7 @@ import depthai as dai
 import numpy as np
 
 BLACK = (255, 255, 255)
-DISPLAY_WINDOW_SIZE_RATE = 2.0
+DISPLAY_WINDOW_SIZE_RATE = 0.5
 
 
 class OakdYolo(object):
@@ -117,36 +117,40 @@ class OakdYolo(object):
 
         detectionNetwork = pipeline.create(dai.node.DetectionNetwork)
 
-        # Camera properties
-        camRgb.setFps(self.fps)
-
-        # Camera outputs
-        rgbOut = camRgb.requestOutput((1920, 1080), dai.ImgFrame.Type.BGR888p)
-        rawOut = camRgb.requestOutput((1920, 1080), dai.ImgFrame.Type.BGR888p)
-
-        # Use ImageManip to resize with letterboxing
-        manip = pipeline.create(dai.node.ImageManip)
-        manip.setOutputSize(
-            self.width, self.height, dai.ImageManipConfig.ResizeMode.LETTERBOX
-        )
-        rgbOut.link(manip.inputImage)
-
         # Network specific settings
         if self._model_type == "zoo":
             nn_description = dai.NNModelDescription(self._model_zoo_name)
-            detectionNetwork.build(manip.out, nn_description)
-        elif self._model_type == "blob":
-            detectionNetwork.setBlobPath(str(self.nn_path))
-            manip.out.link(detectionNetwork.input)
+            detectionNetwork.build(camRgb, nn_description, fps=self.fps)
         else:
-            nn_archive = dai.NNArchive(str(self.nn_path))
-            detectionNetwork.build(manip.out, nn_archive)
+            # Use ImageManip to resize with letterboxing (non-zoo only)
+            rgbOut = camRgb.requestOutput(
+                (1920, 1080), dai.ImgFrame.Type.BGR888p, fps=self.fps
+            )
+            manip = pipeline.create(dai.node.ImageManip)
+            manip.initialConfig.setOutputSize(
+                self.width, self.height, dai.ImageManipConfig.ResizeMode.LETTERBOX
+            )
+            rgbOut.link(manip.inputImage)
+            if self._model_type == "blob":
+                detectionNetwork.setBlobPath(str(self.nn_path))
+                manip.out.link(detectionNetwork.input)
+            else:
+                nn_archive = dai.NNArchive(str(self.nn_path))
+                detectionNetwork.build(manip.out, nn_archive)
 
         detectionNetwork.setConfidenceThreshold(self.confidenceThreshold)
 
+        # Camera outputs
+        rawOut = camRgb.requestOutput(
+            (1920, 1080), dai.ImgFrame.Type.BGR888p, fps=self.fps
+        )
+
         # Create output queues
         self.qControl = camRgb.inputControl.createInputQueue()
-        self.qRgb = detectionNetwork.passthrough.createOutputQueue()
+        if self._model_type == "zoo":
+            self.qRgb = rawOut.createOutputQueue()
+        else:
+            self.qRgb = detectionNetwork.passthrough.createOutputQueue()
         self.qRaw = rawOut.createOutputQueue()
         self.qDet = detectionNetwork.out.createOutputQueue()
 
@@ -185,7 +189,7 @@ class OakdYolo(object):
             self.counter += 1
             width = frame.shape[1]
             height = frame.shape[1] * 9 / 16
-            brank_height = width - height
+            brank_height = frame.shape[0] - height
             frame = frame[
                 int(brank_height / 2) : int(frame.shape[0] - brank_height / 2), 0:width
             ]
